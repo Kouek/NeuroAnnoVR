@@ -1,0 +1,9 @@
+# CMake
+out/
+
+# VS
+.vs/
+
+# Output
+bin/Debug/
+bin/Release/
