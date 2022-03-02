@@ -34,14 +34,6 @@ namespace kouek
 				cudaMemcpyToSymbol(d_textures, hostMemDat, sizeof(cudaTextureObject_t) * num));
 		}
 
-		__constant__ kouek::CompVolumeRenderer::LightParamter d_lightParam;
-		void uploadLightParam(const kouek::CompVolumeRenderer::LightParamter* hostMemDat)
-		{
-			CUDA_RUNTIME_CHECK(
-				cudaMemcpyToSymbol(d_lightParam, hostMemDat,
-					sizeof(kouek::CompVolumeRenderer::LightParamter)));
-		}
-
 		__constant__ cudaTextureObject_t d_transferFunc;
 		void uploadTransferFunc(
 			const float* hostMemDat)
@@ -102,6 +94,16 @@ namespace kouek
 			}
 		}
 
+		__device__ uint32_t rgbaFloatToUInt32(float r, float g, float b, float a)
+		{
+			r = __saturatef(r); // clamp to [0.0, 1.0]
+			g = __saturatef(g);
+			b = __saturatef(b);
+			a = __saturatef(a);
+			return (uint32_t(r * 255) << 24) | (uint32_t(g * 255) << 16)
+				| (uint32_t(b * 255) << 8) | uint32_t(a * 255);
+		}
+
 		__global__ void renderKernel(uint32_t* d_window)
 		{
 			uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
@@ -109,7 +111,17 @@ namespace kouek
 			if (windowX >= d_renderParam.windowSize.x || windowY >= d_renderParam.windowSize.y) return;
 			size_t windowFlatIdx = (size_t)windowY * d_renderParam.windowSize.x + windowX;
 
-			d_window[windowFlatIdx] = 0xffffffff;
+			glm::vec3 rayDrc;
+			{
+				float offsX = (((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f;
+				float offsY = (((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f;
+				glm::vec4 v4 = d_renderParam.unProjection * glm::vec4(offsX, offsY, 0, 0);
+				rayDrc = d_renderParam.rotaion * v4;
+				rayDrc = glm::normalize(rayDrc);
+			}
+			d_window[windowFlatIdx] = rgbaFloatToUInt32(rayDrc.x, rayDrc.y, 1.f, 1.f);
+
+			// intersect Subregion(OBB)
 		}
 
 		uint32_t* d_window = nullptr;
@@ -119,7 +131,7 @@ namespace kouek
 			if (stream == nullptr)
 				CUDA_RUNTIME_CHECK(cudaStreamCreate(&stream));
 
-			// from here, called per frame, tbus no CUDA_RUNTIME_API_CHECK
+			// from here, called per frame, thus no CUDA_RUNTIME_API_CHECK
 			cudaGraphicsMapResources(1, &PBORsc, stream);
 			size_t rscSize;
 			cudaGraphicsResourceGetMappedPointer((void**)&d_window, &rscSize, PBORsc);

@@ -8,9 +8,10 @@ namespace kouek
 	class FPSCamera
 	{
 	private:
+		float yawRad, pitchRad;
 		glm::vec3 pos;
 		glm::vec3 right;
-		glm::vec3 up;
+		glm::vec3 worldUp, up;
 		glm::vec3 forward;
 		glm::mat4x4 view;
 
@@ -23,40 +24,80 @@ namespace kouek
 		{
 			this->pos = eyePos;
 			this->forward = glm::normalize(eyeCenter - eyePos);
-			this->up = up;
+			this->worldUp = up;
 			updateWithPosForwardUp();
 		}
 		inline const glm::mat4& getViewMat() const
 		{
 			return view;
 		}
-		inline std::tuple<const glm::vec3&, const glm::vec3&, const glm::vec3&>
-			getRFU() const
+		inline std::tuple<const glm::vec3&, const glm::vec3&,
+			const glm::vec3&, const glm::vec3&>
+			getRFUP() const
 		{
-			return { right,forward,up };
+			return { right,forward,up,pos };
 		}
-		inline void move(const glm::vec3& difPos)
+		inline void move(float rightStep, float upStep, float forwardStep)
 		{
-			pos += difPos;
+			pos += forwardStep * forward + rightStep * right + upStep * up;
+			view[3][0] = -glm::dot(right, pos);
+			view[3][1] = -glm::dot(up, pos);
+			view[3][2] = glm::dot(forward, pos);
 		}
-		inline void rotate(float pitchDifDeg, float yawDifDeg)
+		inline void rotate(float yawDifDeg, float pitchDifDeg)
 		{
 			float pitchDifRad = glm::radians(pitchDifDeg);
 			float yawDifRad = glm::radians(yawDifDeg);
-			glm::vec3 tmp = forward;
-			forward.y = tmp.y * cosf(pitchDifRad) - tmp.z * sinf(pitchDifRad);
-			forward.z = tmp.y * sinf(pitchDifRad) + tmp.z * cosf(pitchDifRad);
-			tmp.z = forward.z;
-			forward.z = tmp.z * cosf(yawDifRad) - tmp.x * sinf(yawDifRad);
-			forward.x = tmp.z * sinf(yawDifRad) + tmp.x * cosf(yawDifRad);
-			updateWithPosForwardUp();
+			constexpr float PITCH_LIMIT = glm::radians(60.f);
+			pitchRad += pitchDifRad;
+			// avoid dead lock
+			if (pitchRad > PITCH_LIMIT)
+				pitchRad = PITCH_LIMIT;
+			else if (pitchRad < -PITCH_LIMIT)
+				pitchRad = -PITCH_LIMIT;
+			yawRad += yawDifRad;
+			// avoid flaot limit
+			if (yawRad > glm::pi<float>())yawRad -= 2 * glm::pi<float>();
+			else if (yawRad < -glm::pi<float>())yawRad += 2 * glm::pi<float>();
+			updateFromYawPitch();
 		}
 
 	private:
 		inline void updateWithPosForwardUp()
 		{
-			right = glm::normalize(glm::cross(forward, up));
+			right = glm::normalize(glm::cross(forward, worldUp));
 			up = glm::normalize(glm::cross(right, forward));
+
+			pitchRad = asinf(forward.y);
+			yawRad = acosf(forward.x / cosf(pitchRad));
+
+			view[0][0] = right.x;
+			view[1][0] = right.y;
+			view[2][0] = right.z;
+			view[0][1] = up.x;
+			view[1][1] = up.y;
+			view[2][1] = up.z;
+			view[0][2] = -forward.x;
+			view[1][2] = -forward.y;
+			view[2][2] = -forward.z;
+			view[3][0] = -glm::dot(right, pos);
+			view[3][1] = -glm::dot(up, pos);
+			view[3][2] = glm::dot(forward, pos);
+
+			view[3][3] = 1.f;
+			view[0][3] = view[1][3] = view[2][3] = 0;
+		}
+		inline void updateFromYawPitch()
+		{
+			{
+				float cy = cosf(yawRad), sy = sinf(yawRad);
+				float cp = cosf(pitchRad), sp = sinf(pitchRad);
+				forward.x = cp * cy, forward.y = sp, forward.z = -cp * sy;
+				forward = glm::normalize(forward);
+			}
+			right = glm::normalize(glm::cross(forward, worldUp));
+			up = glm::normalize(glm::cross(right, forward));
+
 			view[0][0] = right.x;
 			view[1][0] = right.y;
 			view[2][0] = right.z;

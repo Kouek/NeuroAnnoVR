@@ -7,6 +7,7 @@
 #include <renderer/Renderer.h>
 
 #include <QtWidgets/qopenglwidget.h>
+#include <QtGui/qevent.h>
 #include <QtGui/qopenglshaderprogram.h>
 #include <QtGui/qopenglbuffer.h>
 #include <QtGui/qopenglvertexarrayobject.h>
@@ -32,27 +33,44 @@ namespace kouek
 
 		GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
 
-		std::unique_ptr<WireFrame> gizmo;
 		QOpenGLShaderProgram colorShader, diffuseShader;
 
 		struct
 		{
-			GLuint PBO;
-			GLuint tex;
-			GLuint VBO, EBO, VAO;
+			glm::mat4 transform = Math::IDENTITY;
+			std::unique_ptr<WireFrame> model;
+		}gizmo;
+
+		struct
+		{
+			GLuint PBO = 0;
+			GLuint tex = 0;
+			GLuint VBO = 0, EBO = 0, VAO = 0;
+			CompVolumeRenderer::Subregion subrgn;
 			std::unique_ptr<kouek::CompVolumeMonoEyeRenderer> renderer;
 		}volumeRender;
 
+		struct
+		{
+			QPoint lastCursorPos;
+			Qt::MouseButton lastCursorBtn = Qt::NoButton;
+		}state;
+
 	public:
 		VolumeView(QWidget* parent = Q_NULLPTR)
-			: QOpenGLWidget(parent)
+			: QOpenGLWidget(parent),
+			camera(glm::vec3{ 5.5f,5.5f,5.5f }, glm::vec3{ 0,0,0 })
 		{
-			QSurfaceFormat surfaceFmt;
-			surfaceFmt.setDepthBufferSize(24);
-			surfaceFmt.setStencilBufferSize(8);
-			surfaceFmt.setVersion(4, 5);
-			surfaceFmt.setProfile(QSurfaceFormat::CoreProfile);
-			setFormat(surfaceFmt);
+			setFocusPolicy(Qt::StrongFocus);
+
+			{
+				QSurfaceFormat surfaceFmt;
+				surfaceFmt.setDepthBufferSize(24);
+				surfaceFmt.setStencilBufferSize(8);
+				surfaceFmt.setVersion(4, 5);
+				surfaceFmt.setProfile(QSurfaceFormat::CoreProfile);
+				setFormat(surfaceFmt);
+			}
 
 			{
 				CompVolumeMonoEyeRenderer::CUDAParameter param;
@@ -66,6 +84,46 @@ namespace kouek
 		~VolumeView()
 		{
 			volumeRender.renderer->unregisterOutputGLPBO();
+		}
+
+		inline void setSubregionHalfW(float hfW)
+		{
+			volumeRender.subrgn.halfW = hfW;
+			onSubregionUpdated();
+		}
+		inline void setSubregionHalfH(float hfH)
+		{
+			volumeRender.subrgn.halfH = hfH;
+			onSubregionUpdated();
+		}
+		inline void setSubregionHalfD(float hfD)
+		{
+			volumeRender.subrgn.halfD = hfD;
+			onSubregionUpdated();
+		}
+		inline void setSubregionRotationY(float deg)
+		{
+			float rad = glm::radians(deg);
+			volumeRender.subrgn.rotation =
+				glm::rotate(Math::IDENTITY, rad, glm::vec3{ 0,1.f,0 });
+			onSubregionUpdated();
+		}
+
+	private:
+		inline void onSubregionUpdated()
+		{
+			auto& subrgn = volumeRender.subrgn;
+			volumeRender.renderer->setSubregion(subrgn);
+			auto translate = glm::translate(Math::IDENTITY,
+				glm::vec3{ -subrgn.halfW,-subrgn.halfH,-subrgn.halfD });
+			auto invTranslate = glm::translate(Math::IDENTITY,
+				glm::vec3{ subrgn.halfW,subrgn.halfH,subrgn.halfD });
+			gizmo.transform = glm::scale(Math::IDENTITY,
+				glm::vec3{ subrgn.halfW * 2,subrgn.halfH * 2,subrgn.halfD * 2 });
+			gizmo.transform = translate * gizmo.transform;
+			gizmo.transform = subrgn.rotation * gizmo.transform;
+			gizmo.transform = invTranslate * gizmo.transform;
+			update();
 		}
 
 	protected:
@@ -144,11 +202,23 @@ namespace kouek
 			// gizmo
 			{
 				std::vector<GLfloat> verts = {
+					// axis
 					+0.0f,+0.0f,+0.0f, +1.0f,+0.0f,+0.0f, +1.5f,+0.0f,+0.0f, +1.0f,+0.0f,+0.0f,
 					+0.0f,+0.0f,+0.0f, +0.0f,+1.0f,+0.0f, +0.0f,+1.5f,+0.0f, +0.0f,+1.0f,+0.0f,
-					+0.0f,+0.0f,+0.0f, +0.0f,+0.0f,+1.0f, +0.0f,+0.0f,+1.5f, +0.0f,+0.0f,+1.0f
+					+0.0f,+0.0f,+0.0f, +0.0f,+0.0f,+1.0f, +0.0f,+0.0f,+1.5f, +0.0f,+0.0f,+1.0f,
+					// cube
+					+0.0f,+1.0f,+0.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+0.0f, +1.0f,+1.0f,+1.0f,
+					+0.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f,
+					+0.0f,+1.0f,+0.0f, +1.0f,+1.0f,+1.0f, +0.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f,
+					+1.0f,+1.0f,+0.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f,
+					+1.0f,+0.0f,+0.0f, +1.0f,+1.0f,+1.0f, +1.0f,+0.0f,+1.0f, +1.0f,+1.0f,+1.0f,
+					+0.0f,+0.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+0.0f,+1.0f, +1.0f,+1.0f,+1.0f,
+					+1.0f,+0.0f,+0.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+0.0f, +1.0f,+1.0f,+1.0f,
+					+0.0f,+0.0f,+1.0f, +1.0f,+1.0f,+1.0f, +0.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f,
+					+1.0f,+0.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f
 				};
-				gizmo = std::make_unique<WireFrame>(verts);
+				gizmo.model = std::make_unique<WireFrame>(verts);
+				gizmo.transform = glm::identity<glm::mat4>();
 			}
 
 			// volumeRender
@@ -189,13 +259,16 @@ namespace kouek
 				glGenTextures(1, &volumeRender.tex);
 			}
 
+			// sync default val from this level to deeper logic
 			glClearColor(0, 0, 0, 1.f);
+			onSubregionUpdated();
+			onCameraUpdated();
 		}
 
 		void resizeGL(int w, int h) override
 		{
 			projection = glm::perspectiveFov(
-				glm::radians(60.f), (float)w, (float)h, .1f, 100.f);
+				glm::radians(90.f), (float)w, (float)h, .1f, 100.f);
 			
 			volumeRender.renderer->unregisterOutputGLPBO();
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, volumeRender.PBO);
@@ -247,10 +320,10 @@ namespace kouek
 			colorShader.bind();
 			glUniformMatrix4fv(
 				colorShaderMatrixPos, 1, GL_FALSE,
-				(GLfloat*)&(projection * camera.getViewMat()));
+				(GLfloat*)&(projection * camera.getViewMat() * gizmo.transform));
 			printGLMMat4(projection);
 			printGLMMat4(camera.getViewMat());
-			gizmo->draw();
+			gizmo.model->draw();
 		}
 
 	private:
@@ -260,6 +333,81 @@ namespace kouek
 			printf("%f\t%f\t%f\t%f\n", mat4[0][1], mat4[1][1], mat4[2][1], mat4[3][1]);
 			printf("%f\t%f\t%f\t%f\n", mat4[0][2], mat4[1][2], mat4[2][2], mat4[3][2]);
 			printf("%f\t%f\t%f\t%f\n]\n", mat4[0][3], mat4[1][3], mat4[2][3], mat4[3][3]);
+		}
+
+	protected:
+		void mousePressEvent(QMouseEvent* event) override
+		{
+			state.lastCursorBtn = event->button();
+			switch (state.lastCursorBtn)
+			{
+			case Qt::LeftButton:
+				state.lastCursorPos = event->pos();
+				break;
+			default:
+				break;
+			}
+			event->accept();
+		}
+
+		void mouseMoveEvent(QMouseEvent* event) override
+		{
+			constexpr std::array<float, 3> ROTATE_SENSITY = { .1f,.1f };
+			auto& pos = event->pos();
+			auto difPos = pos - state.lastCursorPos;
+			switch (state.lastCursorBtn)
+			{
+			case Qt::LeftButton:
+				camera.rotate(
+					difPos.x() * -ROTATE_SENSITY[0],
+					difPos.y() * -ROTATE_SENSITY[1]);
+				state.lastCursorPos = pos;
+				onCameraUpdated();
+				break;
+			default:
+				break;
+			}
+			event->accept();
+		}
+
+		void keyPressEvent(QKeyEvent* event) override
+		{
+			constexpr float MOVE_SENSITY = .1f;
+			switch (event->key())
+			{
+			case Qt::Key_W:
+				camera.move(0, 0, MOVE_SENSITY);
+				onCameraUpdated();
+				break;
+			case Qt::Key_A:
+				camera.move(-MOVE_SENSITY, 0, 0);
+				onCameraUpdated();
+				break;
+			case Qt::Key_S:
+				camera.move(0, 0, -MOVE_SENSITY);
+				onCameraUpdated();
+				break;
+			case Qt::Key_D:
+				camera.move(MOVE_SENSITY, 0, 0);
+				onCameraUpdated();
+				break;
+			default:
+				break;
+			}
+		}
+
+	private:
+		void onCameraUpdated()
+		{
+			auto [right, forward, up, pos] = camera.getRFUP();
+			glm::mat4 rotation(
+				right.x, right.y, right.z, 0,
+				up.x, up.y, up.z, 0,
+				-forward.x, -forward.y, -forward.z, 0,
+				0, 0, 0, 1.f);
+			volumeRender.renderer->setCamera(
+				pos, rotation, Math::inverseProjective(projection));
+			update();
 		}
 	};
 }

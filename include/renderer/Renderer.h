@@ -3,7 +3,7 @@
 
 #include <glad/glad.h>
 
-#include <glm/gtc/matrix_transform.hpp>
+#include <renderer/math.h>
 
 #include <VolumeSlicer/volume.hpp>
 #include <VolumeSlicer/transfer_function.hpp>
@@ -34,8 +34,8 @@ namespace kouek
 		/// </summary>
 		struct Subregion
 		{
-			glm::vec3 centerPos;
-			glm::mat3 rotationMat;
+			glm::vec3 center;
+			glm::mat4 rotation;
 			float halfW, halfH, halfD;
 		};
 
@@ -67,7 +67,7 @@ namespace kouek
 
 		virtual void setCamera(
 			const glm::vec3& pos,
-			const glm::mat3& rotation,
+			const glm::mat4& rotation,
 			const glm::mat4& unProjection) = 0;
 	};
 

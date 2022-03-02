@@ -34,10 +34,11 @@ namespace kouek
 			glm::mat4 unProjection;
 			glm::mat4 rotaion;
 			glm::vec3 pos;
+			CompVolumeRenderer::Subregion subrgn;
+			CompVolumeRenderer::LightParamter lightParam;
 		};
 
 		void uploadBlockOffs(const uint32_t* hostMemDat, size_t num);
-		void uploadLightParam(const CompVolumeRenderer::LightParamter* hostMemDat);
 		void uploadCompVolumeParam(const CompVolumeParameter* hostMemDat);
 		void uploadCUDATextureObj(const cudaTextureObject_t* hostMemDat, size_t num);
 		void uploadTransferFunc(const float* hostMemDat);
@@ -55,7 +56,6 @@ namespace kouek
 	private:
 		CUDAParameter cuda;
 		bool subrgnChanged = true;
-		Subregion subrgn;
 		CompVolumeMonoEyeRendererImplCUDA::CompVolumeParameter compVolumeParam;
 		CompVolumeMonoEyeRendererImplCUDA::RenderParameter renderParam;
 
@@ -80,7 +80,7 @@ namespace kouek
 
 		void setCamera(
 			const glm::vec3& pos,
-			const glm::mat3& rotation,
+			const glm::mat4& rotation,
 			const glm::mat4& unProjection) override;
 
 	private:
