@@ -25,7 +25,7 @@ namespace kouek
 			float kd;
 			float ks;
 			float shininess;
-			float4 bkgrndColor;
+			glm::vec4 bkgrndColor;
 		};
 		/// <summary>
 		/// Subregion is a zOx OBB bounding box in Ray-Casting space
@@ -36,6 +36,7 @@ namespace kouek
 		{
 			glm::vec3 center;
 			glm::mat4 rotation;
+			glm::mat4 fromWorldToSubrgn;
 			float halfW, halfH, halfD;
 		};
 

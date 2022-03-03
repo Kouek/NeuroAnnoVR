@@ -41,7 +41,6 @@ void kouek::CompVolumeMonoEyeRendererImpl::setStep(uint32_t maxStepNum, float ma
 void kouek::CompVolumeMonoEyeRendererImpl::setSubregion(const Subregion& subrgn)
 {
 	renderParam.subrgn = subrgn;
-	subrgnChanged = true;
 }
 
 void kouek::CompVolumeMonoEyeRendererImpl::setTransferFunc(const vs::TransferFunc& tf)
@@ -200,7 +199,7 @@ void kouek::CompVolumeMonoEyeRendererImpl::setCamera(
 	const glm::mat4& rotation,
 	const glm::mat4& unProjection)
 {
-	renderParam.pos = pos;
-	renderParam.rotaion = rotation;
+	renderParam.camPos = pos;
+	renderParam.camRotaion = rotation;
 	renderParam.unProjection = unProjection;
 }

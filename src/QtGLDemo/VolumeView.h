@@ -29,7 +29,7 @@ namespace kouek
 	{
 	private:
 		FPSCamera camera;
-		glm::mat4 projection;
+		glm::mat4 projection, unProjection;
 
 		GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
 
@@ -37,7 +37,7 @@ namespace kouek
 
 		struct
 		{
-			glm::mat4 transform = Math::IDENTITY;
+			glm::mat4 transform = glm::identity<glm::mat4>();
 			std::unique_ptr<WireFrame> model;
 		}gizmo;
 
@@ -62,6 +62,7 @@ namespace kouek
 			camera(glm::vec3{ 5.5f,5.5f,5.5f }, glm::vec3{ 0,0,0 })
 		{
 			setFocusPolicy(Qt::StrongFocus);
+			setCursor(Qt::CrossCursor);
 
 			{
 				QSurfaceFormat surfaceFmt;
@@ -79,6 +80,16 @@ namespace kouek
 				param.texUnitNum = 1;
 				param.texUnitDim = { 1024,1024,1024 };
 				volumeRender.renderer = CompVolumeMonoEyeRenderer::create(param);
+			}
+
+			{
+				CompVolumeMonoEyeRenderer::LightParamter param;
+				param.ka = 0.5f;
+				param.kd = 0.8f;
+				param.ks = 0.5f;
+				param.shininess = 64.f;
+				param.bkgrndColor = { 0,0,0,1.f };
+				volumeRender.renderer->setLightParam(param);
 			}
 		}
 		~VolumeView()
@@ -105,7 +116,7 @@ namespace kouek
 		{
 			float rad = glm::radians(deg);
 			volumeRender.subrgn.rotation =
-				glm::rotate(Math::IDENTITY, rad, glm::vec3{ 0,1.f,0 });
+				glm::rotate(glm::identity<glm::mat4>(), rad, glm::vec3{ 0,1.f,0 });
 			onSubregionUpdated();
 		}
 
@@ -113,16 +124,21 @@ namespace kouek
 		inline void onSubregionUpdated()
 		{
 			auto& subrgn = volumeRender.subrgn;
-			volumeRender.renderer->setSubregion(subrgn);
-			auto translate = glm::translate(Math::IDENTITY,
-				glm::vec3{ -subrgn.halfW,-subrgn.halfH,-subrgn.halfD });
-			auto invTranslate = glm::translate(Math::IDENTITY,
-				glm::vec3{ subrgn.halfW,subrgn.halfH,subrgn.halfD });
-			gizmo.transform = glm::scale(Math::IDENTITY,
+
+			// sync Subregion
+			gizmo.transform = glm::scale(glm::identity<glm::mat4>(),
 				glm::vec3{ subrgn.halfW * 2,subrgn.halfH * 2,subrgn.halfD * 2 });
-			gizmo.transform = translate * gizmo.transform;
-			gizmo.transform = subrgn.rotation * gizmo.transform;
-			gizmo.transform = invTranslate * gizmo.transform;
+			auto invTranslation = glm::translate(glm::identity<glm::mat4>(),
+				glm::vec3{ -subrgn.halfW,-subrgn.halfH,-subrgn.halfD });
+			auto translation = glm::translate(glm::identity<glm::mat4>(),
+				glm::vec3{ subrgn.halfW,subrgn.halfH,subrgn.halfD });
+			gizmo.transform = translation * subrgn.rotation
+				* invTranslation * gizmo.transform;
+
+			subrgn.fromWorldToSubrgn = Math::inversePose(
+				translation * subrgn.rotation * invTranslation);
+			volumeRender.renderer->setSubregion(subrgn);
+			
 			update();
 		}
 
@@ -259,8 +275,9 @@ namespace kouek
 				glGenTextures(1, &volumeRender.tex);
 			}
 
-			// sync default val from this level to deeper logic
 			glClearColor(0, 0, 0, 1.f);
+
+			// sync default val from this level to deeper logic
 			onSubregionUpdated();
 			onCameraUpdated();
 		}
@@ -269,7 +286,9 @@ namespace kouek
 		{
 			projection = glm::perspectiveFov(
 				glm::radians(90.f), (float)w, (float)h, .1f, 100.f);
-			
+			unProjection = Math::inverseProjective(projection);
+			onCameraUpdated();
+
 			volumeRender.renderer->unregisterOutputGLPBO();
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, volumeRender.PBO);
 			glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(GLuint) * w * h, NULL,
@@ -321,18 +340,7 @@ namespace kouek
 			glUniformMatrix4fv(
 				colorShaderMatrixPos, 1, GL_FALSE,
 				(GLfloat*)&(projection * camera.getViewMat() * gizmo.transform));
-			printGLMMat4(projection);
-			printGLMMat4(camera.getViewMat());
 			gizmo.model->draw();
-		}
-
-	private:
-		inline void printGLMMat4(const glm::mat4& mat4)
-		{
-			printf("[\n%f\t%f\t%f\t%f\n", mat4[0][0], mat4[1][0], mat4[2][0], mat4[3][0]);
-			printf("%f\t%f\t%f\t%f\n", mat4[0][1], mat4[1][1], mat4[2][1], mat4[3][1]);
-			printf("%f\t%f\t%f\t%f\n", mat4[0][2], mat4[1][2], mat4[2][2], mat4[3][2]);
-			printf("%f\t%f\t%f\t%f\n]\n", mat4[0][3], mat4[1][3], mat4[2][3], mat4[3][3]);
 		}
 
 	protected:
@@ -397,7 +405,7 @@ namespace kouek
 		}
 
 	private:
-		void onCameraUpdated()
+		inline void onCameraUpdated()
 		{
 			auto [right, forward, up, pos] = camera.getRFUP();
 			glm::mat4 rotation(
@@ -406,7 +414,7 @@ namespace kouek
 				-forward.x, -forward.y, -forward.z, 0,
 				0, 0, 0, 1.f);
 			volumeRender.renderer->setCamera(
-				pos, rotation, Math::inverseProjective(projection));
+				pos, rotation, unProjection);
 			update();
 		}
 	};

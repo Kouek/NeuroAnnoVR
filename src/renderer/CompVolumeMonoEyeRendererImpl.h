@@ -30,10 +30,10 @@ namespace kouek
 			uint32_t maxStepNum;
 			uint2 windowSize;
 			float maxStepDist;
-			float3 spaces;
+			glm::vec3 spaces;
 			glm::mat4 unProjection;
-			glm::mat4 rotaion;
-			glm::vec3 pos;
+			glm::mat4 camRotaion;
+			glm::vec3 camPos;
 			CompVolumeRenderer::Subregion subrgn;
 			CompVolumeRenderer::LightParamter lightParam;
 		};
@@ -55,7 +55,6 @@ namespace kouek
 	{
 	private:
 		CUDAParameter cuda;
-		bool subrgnChanged = true;
 		CompVolumeMonoEyeRendererImplCUDA::CompVolumeParameter compVolumeParam;
 		CompVolumeMonoEyeRendererImplCUDA::RenderParameter renderParam;
 
@@ -74,7 +73,7 @@ namespace kouek
 		void setStep(uint32_t maxStepNum, float maxStepDist) override;
 		void setSubregion(const Subregion& subrgn) override;
 		void setTransferFunc(const vs::TransferFunc& tf) override;
-		virtual void setLightParam(const LightParamter& lightParam) override;
+		void setLightParam(const LightParamter& lightParam) override;
 		void setVolume(std::shared_ptr<vs::CompVolume> volume) override;
 		void render() override;
 
@@ -82,12 +81,6 @@ namespace kouek
 			const glm::vec3& pos,
 			const glm::mat4& rotation,
 			const glm::mat4& unProjection) override;
-
-	private:
-		inline glm::vec3 float3ArrToGLMVec3(const std::array<float, 3> arr)
-		{
-			return glm::vec3(arr[0], arr[1], arr[2]);
-		}
 	};
 }
 

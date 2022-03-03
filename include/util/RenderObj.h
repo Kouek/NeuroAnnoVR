@@ -10,7 +10,7 @@ namespace kouek
     protected:
         GLuint VBO = 0;
         GLuint VAO = 0;
-        GLsizei vertCnt = 0;
+        GLsizeiptr vertCnt = 0;
 
     public:
         WireFrame(const WireFrame&) = delete;

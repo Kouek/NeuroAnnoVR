@@ -104,6 +104,44 @@ namespace kouek
 				| (uint32_t(b * 255) << 8) | uint32_t(a * 255);
 		}
 
+		__device__ void rayIntersectAABB(
+			float* tEnter, float* tExit,
+			const glm::vec3& rayOri, const glm::vec3& rayDrc,
+			const glm::vec3& bot, const glm::vec3& top)
+		{
+			// For  Ori + Drc * t3Bot.x = <Bot.x, 0, 0>
+			// Thus t3Bot.x = Bot.x / Drc.x
+			// Thus t3Bot.y = Bot.x / Drc.y
+			// If
+			//   _\|
+			//     \
+			//      \.t3Bot.x
+			//      |\
+			//    __|_\.___|
+			//      |  \t3Bot.y
+			//    __|___\._|_
+			//    t3Top.y\ |
+			//      |     \.t3Top.x
+			// 
+			// Then t3Min = t3Bot, t3Max = t3Top
+			// And  the max of t3Min is tEnter
+			// And  the min of t3Max is tExit
+
+			glm::vec3 invRay = 1.f / rayDrc;
+			glm::vec3 t3Bot = invRay * (bot - rayOri);
+			glm::vec3 t3Top = invRay * (top - rayOri);
+			glm::vec3 t3Min{
+				fminf(t3Bot.x, t3Top.x),
+				fminf(t3Bot.y, t3Top.y),
+				fminf(t3Bot.z, t3Top.z) };
+			glm::vec3 t3Max{
+				fmaxf(t3Bot.x, t3Top.x),
+				fmaxf(t3Bot.y, t3Top.y),
+				fmaxf(t3Bot.z, t3Top.z) };
+			*tEnter = fmaxf(fmaxf(t3Min.x, t3Min.y), fmaxf(t3Min.x, t3Min.z));
+			*tExit = fminf(fminf(t3Max.x, t3Max.y), fminf(t3Max.x, t3Max.z));
+		}
+
 		__global__ void renderKernel(uint32_t* d_window)
 		{
 			uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
@@ -112,16 +150,60 @@ namespace kouek
 			size_t windowFlatIdx = (size_t)windowY * d_renderParam.windowSize.x + windowX;
 
 			glm::vec3 rayDrc;
+			float tEnter, tExit;
 			{
 				float offsX = (((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f;
 				float offsY = (((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f;
-				glm::vec4 v4 = d_renderParam.unProjection * glm::vec4(offsX, offsY, 0, 0);
-				rayDrc = d_renderParam.rotaion * v4;
+				glm::vec4 v41 = d_renderParam.unProjection * glm::vec4(offsX, offsY, 1.f, 1.f);
+				v41 = d_renderParam.camRotaion * v41;
+				rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
 				rayDrc = glm::normalize(rayDrc);
-			}
-			d_window[windowFlatIdx] = rgbaFloatToUInt32(rayDrc.x, rayDrc.y, 1.f, 1.f);
 
-			// intersect Subregion(OBB)
+				// Ray intersect Subregion(OBB)
+				// equivalent to Ray intersect AABB in Subreion Space
+				//   for pos, apply Rotation and Translation
+				glm::vec4 v42{ d_renderParam.camPos.x, d_renderParam.camPos.y,
+					d_renderParam.camPos.z, 1.f };
+				v42 = d_renderParam.subrgn.fromWorldToSubrgn * v42;
+				//   for drc, apply Rotation only
+				v41.x = rayDrc.x, v41.y = rayDrc.y, v41.z = rayDrc.z, v41.w = 0;
+				v41 = d_renderParam.subrgn.fromWorldToSubrgn * v41;
+				rayIntersectAABB(
+					&tEnter, &tExit,
+					glm::vec3(v42), glm::normalize(glm::vec3(v41)),
+					glm::zero<glm::vec3>(),
+					glm::vec3{
+						d_renderParam.subrgn.halfW * 2,
+						d_renderParam.subrgn.halfH * 2,
+						d_renderParam.subrgn.halfD * 2 });
+			}
+
+#ifdef TEST_RAY_DIRECTION
+			// TEST: Ray Direction
+			d_window[windowFlatIdx] = rgbaFloatToUInt32(rayDrc.x, rayDrc.y, rayDrc.z, 1.f);
+			return;
+#endif // TEST_RAY_DIRECTION
+
+			if (tEnter < 0) tEnter = 0;
+			if (tEnter >= tExit)
+			{
+				d_window[windowFlatIdx] = rgbaFloatToUInt32(
+					d_renderParam.lightParam.bkgrndColor.r,
+					d_renderParam.lightParam.bkgrndColor.g,
+					d_renderParam.lightParam.bkgrndColor.b,
+					d_renderParam.lightParam.bkgrndColor.a);
+				return;
+			}
+			glm::vec3 rayPos = d_renderParam.camPos + tEnter * rayDrc;
+#define TEST_RAY_ENTER_POSITION
+#ifdef TEST_RAY_ENTER_POSITION
+			// TEST: Ray Enter Position
+			d_window[windowFlatIdx] = rgbaFloatToUInt32(
+				.5f * rayPos.x / d_renderParam.subrgn.halfW,
+				.5f * rayPos.y / d_renderParam.subrgn.halfH,
+				.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+			return;
+#endif // TEST_RAY_ENTER_POSITION
 		}
 
 		uint32_t* d_window = nullptr;
