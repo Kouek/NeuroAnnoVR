@@ -15,7 +15,7 @@ configure_file("${INCLUDE_DIR}/CMakeIn.h.in" "${INCLUDE_DIR}/CMakeIn.h")
 
 # Qt dep
 ## Note 1:
-## Append CMAKE_PREFIX_PATH with where your Qt 5 installation prefix
+## Append CMAKE_PREFIX_PATH with your Qt 5 installation prefix
 ## eg. In Windows, -DCMAKE_PREFIX_PATH="D:\Qt\Qt5.9.8\5.9.8\msvc2017_64\lib\cmake"
 ## Note 2:
 ## Make sure Qt5 shared libs path are in ENV_PATH

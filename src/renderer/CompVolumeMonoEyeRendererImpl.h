@@ -4,6 +4,7 @@
 #include <renderer/Renderer.h>
 
 #include <unordered_set>
+#include <unordered_map>
 
 #include <VolumeSlicer/volume_cache.hpp>
 
@@ -18,19 +19,25 @@ namespace kouek
 		constexpr uint8_t MAX_LOD = 6;
 		constexpr uint8_t MAX_TEX_UNIT_NUM = 10;
 
+		struct CUDAParameter
+		{
+			glm::uvec3 texUnitDim;
+		};
 		struct CompVolumeParameter
 		{
 			uint32_t blockLength;
 			uint32_t padding;
 			uint32_t noPaddingBlockLength;
-			uint3 LOD0BlockDim;
+			glm::uvec3 LOD0BlockDim;
+			glm::vec3 spaces;
 		};
 		struct RenderParameter
 		{
 			uint32_t maxStepNum;
-			uint2 windowSize;
+			glm::uvec2 windowSize;
+			float step;
 			float maxStepDist;
-			glm::vec3 spaces;
+			float nearClip, farClip;
 			glm::mat4 unProjection;
 			glm::mat4 camRotaion;
 			glm::vec3 camPos;
@@ -38,6 +45,7 @@ namespace kouek
 			CompVolumeRenderer::LightParamter lightParam;
 		};
 
+		void uploadCUDAParameter(const CUDAParameter* hostMemDat);
 		void uploadBlockOffs(const uint32_t* hostMemDat, size_t num);
 		void uploadCompVolumeParam(const CompVolumeParameter* hostMemDat);
 		void uploadCUDATextureObj(const cudaTextureObject_t* hostMemDat, size_t num);
@@ -55,12 +63,14 @@ namespace kouek
 	{
 	private:
 		CUDAParameter cuda;
+		bool subrgnChanged = true;
 		CompVolumeMonoEyeRendererImplCUDA::CompVolumeParameter compVolumeParam;
 		CompVolumeMonoEyeRendererImplCUDA::RenderParameter renderParam;
 
 		std::shared_ptr<vs::CompVolume> volume;
 		std::unique_ptr<vs::CUDAVolumeBlockCache> blockCache;
 
+		std::unordered_map<std::array<uint32_t, 3>, vs::AABB, Hash_UInt32Array3> blockToAABBs;
 		std::unordered_set<std::array<uint32_t, 4>, Hash_UInt32Array4> needBlocks, currNeedBlocks;
 		std::unordered_set<std::array<uint32_t, 4>, Hash_UInt32Array4> loadBlocks, unloadBlocks;
 
@@ -80,7 +90,9 @@ namespace kouek
 		void setCamera(
 			const glm::vec3& pos,
 			const glm::mat4& rotation,
-			const glm::mat4& unProjection) override;
+			const glm::mat4& unProjection,
+			float nearClip = .01f,
+			float farClip = 100.f) override;
 	};
 }
 

@@ -8,10 +8,11 @@ add_executable(
 	"DemoWindow.ui"
 	"main.cpp"
 	"DemoWindow.cpp"
+	"VolumeView.h" # Necessary! Or it won't be MOC
 	"${THIRDPARTY_DIR}/glad/src/glad.c"
 )
 target_link_libraries(
 	${TARGET_NAME}
 	${Qt5_LIBS}
-	"SubregionRenderer"
+	"CompVolumeRenderer"
 )

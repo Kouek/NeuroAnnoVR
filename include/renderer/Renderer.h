@@ -17,7 +17,7 @@ namespace kouek
 		{
 			CUcontext ctx;
 			uint32_t texUnitNum;
-			std::array<uint32_t, 3> texUnitDim;
+			glm::uvec3 texUnitDim;
 		};
 		struct LightParamter
 		{
@@ -69,7 +69,9 @@ namespace kouek
 		virtual void setCamera(
 			const glm::vec3& pos,
 			const glm::mat4& rotation,
-			const glm::mat4& unProjection) = 0;
+			const glm::mat4& unProjection,
+			float nearClip = .01f,
+			float farClip = 100.f) = 0;
 	};
 
 	class CompVolumeDualEyeRenderer : public CompVolumeRenderer

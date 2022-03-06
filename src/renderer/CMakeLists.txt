@@ -1,14 +1,18 @@
-set(TARGET_NAME "SubregionRenderer")
+set(TARGET_NAME "CompVolumeRenderer")
 
 foreach(
-	src
+	vscore_src
 	"Volume/volume_impl.cpp"
     "Volume/block_loader.cpp"
     "Volume/volume_cache_impl.cpp"
 	"IO/reader_impl.cpp"
     "Common/cuda_context.cpp"
+	"Common/image.cpp"
+    "Common/library.cpp"
+    "Common/library_reposity.cpp"
+	"Common/plugin_loader.cpp"
 )
-	list(APPEND VSCORE_SRCS "${CMAKE_CURRENT_LIST_DIR}/VSCore/${src}")
+	list(APPEND VSCORE_SRCS "${CMAKE_CURRENT_LIST_DIR}/VSCore/${vscore_src}")
 endforeach()
 message(STATUS "${TARGET_NAME}'s VSCORE_SRCS: ${VSCORE_SRCS}")
 

@@ -12,8 +12,11 @@
 #include <QtGui/qopenglbuffer.h>
 #include <QtGui/qopenglvertexarrayobject.h>
 
+#include <CMakeIn.h>
+
 #include <camera/FPSCamera.h>
 #include <util/RenderObj.h>
+#include <util/VolumeCfg.h>
 
 #define GL_CHECK \
          {       \
@@ -27,11 +30,15 @@ namespace kouek
 {
 	class VolumeView : public QOpenGLWidget
 	{
+		Q_OBJECT
+
 	private:
+		GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
+
+		float rotateSensity = .1f, moveSensity = .1f;
+		float nearClip = .01f, farClip = 10.f;
 		FPSCamera camera;
 		glm::mat4 projection, unProjection;
-
-		GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
 
 		QOpenGLShaderProgram colorShader, diffuseShader;
 
@@ -47,11 +54,13 @@ namespace kouek
 			GLuint tex = 0;
 			GLuint VBO = 0, EBO = 0, VAO = 0;
 			CompVolumeRenderer::Subregion subrgn;
+			std::shared_ptr<vs::CompVolume> volume;
 			std::unique_ptr<kouek::CompVolumeMonoEyeRenderer> renderer;
 		}volumeRender;
 
 		struct
 		{
+			bool CTRLPressed;
 			QPoint lastCursorPos;
 			Qt::MouseButton lastCursorBtn = Qt::NoButton;
 		}state;
@@ -59,7 +68,7 @@ namespace kouek
 	public:
 		VolumeView(QWidget* parent = Q_NULLPTR)
 			: QOpenGLWidget(parent),
-			camera(glm::vec3{ 5.5f,5.5f,5.5f }, glm::vec3{ 0,0,0 })
+			camera(glm::vec3{ .16f,.16f,.16f }, glm::zero<glm::vec3>())
 		{
 			setFocusPolicy(Qt::StrongFocus);
 			setCursor(Qt::CrossCursor);
@@ -82,13 +91,43 @@ namespace kouek
 				volumeRender.renderer = CompVolumeMonoEyeRenderer::create(param);
 			}
 
+			try
+			{
+				std::string cfgPath(kouek::PROJECT_SOURCE_DIR);
+				cfgPath.append("/cfg/VolumeCfg.json");
+				kouek::VolumeConfig cfg(cfgPath.c_str());
+				volumeRender.volume =
+					vs::CompVolume::Load(cfg.getResourcePath().c_str());
+				volumeRender.volume->SetSpaceX(cfg.getSpaceX());
+				volumeRender.volume->SetSpaceY(cfg.getSpaceY());
+				volumeRender.volume->SetSpaceZ(cfg.getSpaceZ());
+				volumeRender.renderer->setVolume(volumeRender.volume);
+			}
+			catch (std::exception& e)
+			{
+				spdlog::error("File: {0}, Line: {1}, Error: {2}", __FILE__,
+					__LINE__, e.what());
+			}
+
+			{
+				vs::TransferFunc tf;
+				tf.points.emplace_back(0, std::array<double, 4>{0.0, 0.1, 0.6, 0.0});
+				tf.points.emplace_back(25, std::array<double, 4>{0.25, 0.5, 1.0, 0.0});
+				tf.points.emplace_back(30, std::array<double, 4>{0.25, 0.5, 1.0, 0.2});
+				tf.points.emplace_back(40, std::array<double, 4>{0.25, 0.5, 1.0, 0.1});
+				tf.points.emplace_back(64, std::array<double, 4>{0.75, 0.50, 0.25, 0.4});
+				tf.points.emplace_back(224, std::array<double, 4>{0.75, 0.75, 0.25, 0.6});
+				tf.points.emplace_back(255, std::array<double, 4>{1.00, 0.75, 0.75, 0.4});
+				volumeRender.renderer->setTransferFunc(std::move(tf));
+			}
+
 			{
 				CompVolumeMonoEyeRenderer::LightParamter param;
 				param.ka = 0.5f;
 				param.kd = 0.8f;
 				param.ks = 0.5f;
 				param.shininess = 64.f;
-				param.bkgrndColor = { 0,0,0,1.f };
+				param.bkgrndColor = { .1f,.1f,.1f,1.f };
 				volumeRender.renderer->setLightParam(param);
 			}
 		}
@@ -97,6 +136,10 @@ namespace kouek
 			volumeRender.renderer->unregisterOutputGLPBO();
 		}
 
+	signals:
+		void subregionMoved(const std::array<uint32_t, 3>& blockOfSubrgnCenter);
+
+	public:
 		inline void setSubregionHalfW(float hfW)
 		{
 			volumeRender.subrgn.halfW = hfW;
@@ -121,7 +164,7 @@ namespace kouek
 		}
 
 	private:
-		inline void onSubregionUpdated()
+		void onSubregionUpdated()
 		{
 			auto& subrgn = volumeRender.subrgn;
 
@@ -138,7 +181,17 @@ namespace kouek
 			subrgn.fromWorldToSubrgn = Math::inversePose(
 				translation * subrgn.rotation * invTranslation);
 			volumeRender.renderer->setSubregion(subrgn);
-			
+
+			auto [noPaddingBlockLen, padding, minLOD, maxLOD] =
+				volumeRender.volume->GetBlockLength();
+			noPaddingBlockLen -= 2 * padding;
+			std::array subrgnInBlock{
+				(uint32_t)(subrgn.center.x / volumeRender.volume->GetVolumeSpaceX() / noPaddingBlockLen),
+				(uint32_t)(subrgn.center.y / volumeRender.volume->GetVolumeSpaceY() / noPaddingBlockLen),
+				(uint32_t)(subrgn.center.z / volumeRender.volume->GetVolumeSpaceZ() / noPaddingBlockLen)
+			};
+			emit subregionMoved(subrgnInBlock);
+
 			update();
 		}
 
@@ -277,6 +330,7 @@ namespace kouek
 
 			glClearColor(0, 0, 0, 1.f);
 
+			volumeRender.subrgn.center = { 0,0,0 };
 			// sync default val from this level to deeper logic
 			onSubregionUpdated();
 			onCameraUpdated();
@@ -285,7 +339,7 @@ namespace kouek
 		void resizeGL(int w, int h) override
 		{
 			projection = glm::perspectiveFov(
-				glm::radians(90.f), (float)w, (float)h, .1f, 100.f);
+				glm::radians(90.f), (float)w, (float)h, nearClip, farClip);
 			unProjection = Math::inverseProjective(projection);
 			onCameraUpdated();
 
@@ -343,6 +397,16 @@ namespace kouek
 			gizmo.model->draw();
 		}
 
+	public:
+		inline void setFPSCamera(
+			const glm::vec3& eyePos,
+			float moveSensity, float rotateSensity)
+		{
+			camera = kouek::FPSCamera(eyePos, glm::zero<glm::vec3>());
+			this->moveSensity = moveSensity;
+			this->rotateSensity = rotateSensity;
+		}
+
 	protected:
 		void mousePressEvent(QMouseEvent* event) override
 		{
@@ -360,15 +424,14 @@ namespace kouek
 
 		void mouseMoveEvent(QMouseEvent* event) override
 		{
-			constexpr std::array<float, 3> ROTATE_SENSITY = { .1f,.1f };
 			auto& pos = event->pos();
 			auto difPos = pos - state.lastCursorPos;
 			switch (state.lastCursorBtn)
 			{
 			case Qt::LeftButton:
 				camera.rotate(
-					difPos.x() * -ROTATE_SENSITY[0],
-					difPos.y() * -ROTATE_SENSITY[1]);
+					difPos.x() * -rotateSensity,
+					difPos.y() * -rotateSensity);
 				state.lastCursorPos = pos;
 				onCameraUpdated();
 				break;
@@ -380,24 +443,60 @@ namespace kouek
 
 		void keyPressEvent(QKeyEvent* event) override
 		{
-			constexpr float MOVE_SENSITY = .1f;
 			switch (event->key())
 			{
+			case Qt::Key_Control:
+				state.CTRLPressed = true;
+				break;
 			case Qt::Key_W:
-				camera.move(0, 0, MOVE_SENSITY);
+				camera.move(0, 0, moveSensity);
 				onCameraUpdated();
 				break;
 			case Qt::Key_A:
-				camera.move(-MOVE_SENSITY, 0, 0);
+				camera.move(-moveSensity, 0, 0);
 				onCameraUpdated();
 				break;
 			case Qt::Key_S:
-				camera.move(0, 0, -MOVE_SENSITY);
+				camera.move(0, 0, -moveSensity);
 				onCameraUpdated();
 				break;
 			case Qt::Key_D:
-				camera.move(MOVE_SENSITY, 0, 0);
+				camera.move(moveSensity, 0, 0);
 				onCameraUpdated();
+				break;
+			case Qt::Key_Left:
+				volumeRender.subrgn.center += glm::vec3{ -moveSensity,0,0 };
+				onSubregionUpdated();
+				break;
+			case Qt::Key_Right:
+				volumeRender.subrgn.center += glm::vec3{ moveSensity,0,0 };
+				onSubregionUpdated();
+				break;
+			case Qt::Key_Down:
+				if (state.CTRLPressed)
+					volumeRender.subrgn.center += glm::vec3{ 0,-moveSensity,0 };
+				else
+					volumeRender.subrgn.center += glm::vec3{ 0,0,-moveSensity };
+				onSubregionUpdated();
+				break;
+			case Qt::Key_Up:
+				if (state.CTRLPressed)
+					volumeRender.subrgn.center += glm::vec3{ 0,moveSensity,0 };
+				else
+					volumeRender.subrgn.center += glm::vec3{ 0,0,moveSensity };
+				onSubregionUpdated();
+				break;
+			default:
+				break;
+			}
+		}
+
+		void keyReleaseEvent(QKeyEvent* event)
+		{
+			switch (event->key())
+			{
+			case Qt::Key_Control:
+				state.CTRLPressed = false;
 				break;
 			default:
 				break;
@@ -414,7 +513,7 @@ namespace kouek
 				-forward.x, -forward.y, -forward.z, 0,
 				0, 0, 0, 1.f);
 			volumeRender.renderer->setCamera(
-				pos, rotation, unProjection);
+				pos, rotation, unProjection, nearClip, farClip);
 			update();
 		}
 	};

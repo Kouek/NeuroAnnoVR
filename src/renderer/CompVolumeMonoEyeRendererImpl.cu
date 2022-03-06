@@ -9,6 +9,13 @@ namespace kouek
 {
 	namespace CompVolumeMonoEyeRendererImplCUDA
 	{
+		__constant__ CUDAParameter d_cudaParam;
+		void uploadCUDAParameter(const CUDAParameter* hostMemDat)
+		{
+			CUDA_RUNTIME_CHECK(
+				cudaMemcpyToSymbol(d_cudaParam, hostMemDat, sizeof(CUDAParameter)));
+		}
+
 		__constant__ uint32_t d_blockOffsets[MAX_LOD + 1];
 		void uploadBlockOffs(
 			const uint32_t* hostMemDat, size_t num)
@@ -63,7 +70,7 @@ namespace kouek
 		}
 
 		uint32_t* d_mappingTable = nullptr;
-		__constant__ uint4* d_mappingTableStride4 = nullptr;
+		__constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
 		void uploadMappingTable(const uint32_t* hostMemDat, size_t size)
 		{
 			if (d_mappingTable == nullptr)
@@ -71,7 +78,7 @@ namespace kouek
 				cudaMalloc(&d_mappingTable, size);
 				// cpy uint32_t ptr to uint4 ptr
 				CUDA_RUNTIME_API_CALL(
-					cudaMemcpyToSymbol(d_mappingTableStride4, &d_mappingTable, sizeof(uint4*)));
+					cudaMemcpyToSymbol(d_mappingTableStride4, &d_mappingTable, sizeof(glm::uvec4*)));
 			}
 			CUDA_RUNTIME_API_CALL(
 				cudaMemcpy(d_mappingTable, hostMemDat, size, cudaMemcpyHostToDevice));
@@ -94,6 +101,44 @@ namespace kouek
 			}
 		}
 
+		__device__ bool virtualSampleLOD0(
+			float* sampleVal, const glm::vec3& samplePos)
+		{
+			// sample pos in Voxel Space -> virtual sample Block idx
+			glm::uvec3 vsBlockIdx =
+				samplePos / (float)d_compVolumeParam.noPaddingBlockLength;
+
+			// virtual sample Block idx -> real sample Block idx (in GPU Mem)
+			glm::uvec4 GPUMemBlockIdx;
+			{
+				size_t flatVSBlockIdx = d_blockOffsets[0]
+					+ vsBlockIdx.z * d_compVolumeParam.LOD0BlockDim.y * d_compVolumeParam.LOD0BlockDim.x
+					+ vsBlockIdx.y * d_compVolumeParam.LOD0BlockDim.x
+					+ vsBlockIdx.x;
+				GPUMemBlockIdx = d_mappingTableStride4[flatVSBlockIdx];
+			}
+
+			if (((GPUMemBlockIdx.w >> 16) & (0x0000ffff)) != 1)
+				// not a valid GPU Mem block
+				return 0;
+
+			// sample pos in Voxel Space -> real sample pos (in GPU Mem)
+			glm::vec3 GPUMemSamplePos;
+			{
+				glm::vec3 offsetInNoPaddingBlock = samplePos -
+					glm::vec3{ vsBlockIdx * d_compVolumeParam.noPaddingBlockLength };
+				GPUMemSamplePos = glm::vec3{ GPUMemBlockIdx.x, GPUMemBlockIdx.y, GPUMemBlockIdx.z }
+					* (float)d_compVolumeParam.blockLength
+					+ offsetInNoPaddingBlock + (float)d_compVolumeParam.padding;
+				// normolized
+				GPUMemSamplePos /= d_cudaParam.texUnitDim;
+			}
+
+			*sampleVal = tex3D<float>(d_textures[GPUMemBlockIdx.w & (0x0000ffff)],
+				GPUMemSamplePos.x, GPUMemSamplePos.y, GPUMemSamplePos.z);
+			return 1;
+		}
+
 		__device__ uint32_t rgbaFloatToUInt32(float r, float g, float b, float a)
 		{
 			r = __saturatef(r); // clamp to [0.0, 1.0]
@@ -112,9 +157,9 @@ namespace kouek
 			// For  Ori + Drc * t3Bot.x = <Bot.x, 0, 0>
 			// Thus t3Bot.x = Bot.x / Drc.x
 			// Thus t3Bot.y = Bot.x / Drc.y
-			// If
-			//   _\|
-			//     \
+			// If  \
+			//  \_\|\ 
+			//   \_\|
 			//      \.t3Bot.x
 			//      |\
 			//    __|_\.___|
@@ -149,12 +194,27 @@ namespace kouek
 			if (windowX >= d_renderParam.windowSize.x || windowY >= d_renderParam.windowSize.y) return;
 			size_t windowFlatIdx = (size_t)windowY * d_renderParam.windowSize.x + windowX;
 
+			d_window[windowFlatIdx] = rgbaFloatToUInt32(
+				d_renderParam.lightParam.bkgrndColor.r,
+				d_renderParam.lightParam.bkgrndColor.g,
+				d_renderParam.lightParam.bkgrndColor.b,
+				d_renderParam.lightParam.bkgrndColor.a);
+
 			glm::vec3 rayDrc;
 			float tEnter, tExit;
 			{
-				float offsX = (((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f;
-				float offsY = (((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f;
-				glm::vec4 v41 = d_renderParam.unProjection * glm::vec4(offsX, offsY, 1.f, 1.f);
+				// find Ray of each Pixel on Window
+				//   unproject
+				glm::vec4 v41 = d_renderParam.unProjection * glm::vec4{
+					(((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f,
+					(((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f,
+					1.f, 1.f };
+				//   don't rotate first to compute the near&far-clip steps
+				rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
+				rayDrc = glm::normalize(rayDrc);
+				float tNearClip = d_renderParam.nearClip / fabsf(rayDrc.z);
+				float tFarClip = d_renderParam.farClip / fabsf(rayDrc.z);
+				//   rotate
 				v41 = d_renderParam.camRotaion * v41;
 				rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
 				rayDrc = glm::normalize(rayDrc);
@@ -166,16 +226,21 @@ namespace kouek
 					d_renderParam.camPos.z, 1.f };
 				v42 = d_renderParam.subrgn.fromWorldToSubrgn * v42;
 				//   for drc, apply Rotation only
-				v41.x = rayDrc.x, v41.y = rayDrc.y, v41.z = rayDrc.z, v41.w = 0;
+				v41.w = 0;
 				v41 = d_renderParam.subrgn.fromWorldToSubrgn * v41;
 				rayIntersectAABB(
 					&tEnter, &tExit,
-					glm::vec3(v42), glm::normalize(glm::vec3(v41)),
+					glm::vec3(v42),
+					glm::normalize(glm::vec3(v41)),
 					glm::zero<glm::vec3>(),
 					glm::vec3{
 						d_renderParam.subrgn.halfW * 2,
 						d_renderParam.subrgn.halfH * 2,
 						d_renderParam.subrgn.halfD * 2 });
+				
+				// near&far-clip
+				if (tEnter < tNearClip) tEnter = tNearClip;
+				if (tExit > tFarClip) tExit = tFarClip;
 			}
 
 #ifdef TEST_RAY_DIRECTION
@@ -184,18 +249,12 @@ namespace kouek
 			return;
 #endif // TEST_RAY_DIRECTION
 
-			if (tEnter < 0) tEnter = 0;
+			// no intersection
 			if (tEnter >= tExit)
-			{
-				d_window[windowFlatIdx] = rgbaFloatToUInt32(
-					d_renderParam.lightParam.bkgrndColor.r,
-					d_renderParam.lightParam.bkgrndColor.g,
-					d_renderParam.lightParam.bkgrndColor.b,
-					d_renderParam.lightParam.bkgrndColor.a);
 				return;
-			}
 			glm::vec3 rayPos = d_renderParam.camPos + tEnter * rayDrc;
-#define TEST_RAY_ENTER_POSITION
+
+
 #ifdef TEST_RAY_ENTER_POSITION
 			// TEST: Ray Enter Position
 			d_window[windowFlatIdx] = rgbaFloatToUInt32(
@@ -204,6 +263,47 @@ namespace kouek
 				.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
 			return;
 #endif // TEST_RAY_ENTER_POSITION
+
+			glm::vec3 subrgnCenterInWdSp = {
+				.5f * d_renderParam.subrgn.halfW,
+				.5f * d_renderParam.subrgn.halfH,
+				.5f * d_renderParam.subrgn.halfD,
+			};
+			glm::vec3 samplePos;
+			glm::vec4 color = glm::zero<glm::vec4>();
+			float sampleVal = 0;
+			uint32_t stepNum = 0;
+			for (; stepNum <= d_renderParam.maxStepNum && tEnter <= d_renderParam.maxStepDist;
+				++stepNum,
+				tEnter += d_renderParam.step,
+				rayPos += rayDrc * d_renderParam.step)
+			{
+				// ray pos in World Space -> sample pos in Voxel Space
+				samplePos =
+					(rayPos - subrgnCenterInWdSp + d_renderParam.subrgn.center)
+					/ d_compVolumeParam.spaces;
+
+				// virtual sample in Voxel Space, real sample in GPU Mem
+				float currSampleVal;
+				{
+					int flag = virtualSampleLOD0(&currSampleVal, samplePos);
+					if (flag == 0 || currSampleVal <= 0)
+						continue;
+				}
+
+				float4 currColor = tex2D<float4>(d_preIntTransferFunc, sampleVal, currSampleVal);
+				if (currColor.w <= 0)
+					continue;
+
+				sampleVal = currSampleVal;
+				color = color + (1.f - color.w) * glm::vec4{ currColor.x,currColor.y,currColor.z,currColor.w }
+					* glm::vec4{ currColor.w,currColor.w,currColor.w,1.f };
+				
+				if (color.w > 0.9f)
+					break;
+			}
+
+			d_window[windowFlatIdx] = rgbaFloatToUInt32(color.r, color.g, color.b, color.a);
 		}
 
 		uint32_t* d_window = nullptr;
