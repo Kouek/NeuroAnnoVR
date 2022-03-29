@@ -25,7 +25,7 @@ namespace kouek
 			float kd;
 			float ks;
 			float shininess;
-			glm::vec4 bkgrndColor;
+			glm::vec3 bkgrndColor;
 		};
 		/// <summary>
 		/// Subregion is a zOx OBB bounding box in Ray-Casting space
@@ -40,8 +40,6 @@ namespace kouek
 			float halfW, halfH, halfD;
 		};
 
-		virtual void registerOutputGLPBO(GLuint outPBO, uint32_t w, uint32_t h) = 0;
-		virtual void unregisterOutputGLPBO() = 0;
 		virtual void setStep(uint32_t maxStepNum, float maxStepDist) = 0;
 		virtual void setSubregion(const Subregion& subrgn) = 0;
 		virtual void setTransferFunc(const vs::TransferFunc& tf) = 0;
@@ -57,21 +55,24 @@ namespace kouek
 			const CUDAParameter& cudaParam
 		);
 
-		virtual void registerOutputGLPBO(GLuint outPBO, uint32_t w, uint32_t h) = 0;
-		virtual void unregisterOutputGLPBO() = 0;
-		virtual void setStep(uint32_t maxStepNum, float maxStepDist) = 0;
+		virtual void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h) = 0;
+		virtual void unregisterGLResource() = 0;
+		virtual void setStep(uint32_t maxStepNum, float step) = 0;
 		virtual void setSubregion(const Subregion& subrgn) = 0;
 		virtual void setTransferFunc(const vs::TransferFunc& tf) = 0;
 		virtual void setLightParam(const LightParamter& lightParam) = 0;
 		virtual void setVolume(std::shared_ptr<vs::CompVolume> volume) = 0;
 		virtual void render() = 0;
 
-		virtual void setCamera(
-			const glm::vec3& pos,
-			const glm::mat4& rotation,
-			const glm::mat4& unProjection,
-			float nearClip = .01f,
-			float farClip = 100.f) = 0;
+		struct CameraParameter
+		{
+			const glm::vec3& pos;
+			const glm::mat4& rotation;
+			const glm::mat4& unProjection;
+			float projection22, projection23;	
+			float nearClip = .01f, farClip = 100.f;
+		};
+		virtual void setCamera(const CameraParameter& camParam) = 0;
 	};
 
 	class CompVolumeDualEyeRenderer : public CompVolumeRenderer

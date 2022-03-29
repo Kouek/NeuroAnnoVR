@@ -36,7 +36,7 @@ namespace kouek
 			uint32_t maxStepNum;
 			glm::uvec2 windowSize;
 			float step;
-			float maxStepDist;
+			float projection22, projection23;
 			float nearClip, farClip;
 			glm::mat4 unProjection;
 			glm::mat4 camRotaion;
@@ -54,8 +54,8 @@ namespace kouek
 		void uploadRenderParam(const RenderParameter* hostMemDat);
 		void uploadMappingTable(const uint32_t* hostMemDat, size_t size);
 
-		void registerOutputGLPBO(GLuint outPBO);
-		void unregisterOutputGLPBO();
+		void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h);
+		void unregisterGLResource();
 		void render(uint32_t windowW, uint32_t windowH);
 	}
 
@@ -78,21 +78,16 @@ namespace kouek
 		CompVolumeMonoEyeRendererImpl(const CUDAParameter& cudaParam);
 		~CompVolumeMonoEyeRendererImpl();
 
-		void registerOutputGLPBO(GLuint outPBO, uint32_t w, uint32_t h) override;
-		void unregisterOutputGLPBO() override;
-		void setStep(uint32_t maxStepNum, float maxStepDist) override;
+		void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h) override;
+		void unregisterGLResource() override;
+		void setStep(uint32_t maxStepNum, float step) override;
 		void setSubregion(const Subregion& subrgn) override;
 		void setTransferFunc(const vs::TransferFunc& tf) override;
 		void setLightParam(const LightParamter& lightParam) override;
 		void setVolume(std::shared_ptr<vs::CompVolume> volume) override;
 		void render() override;
 
-		void setCamera(
-			const glm::vec3& pos,
-			const glm::mat4& rotation,
-			const glm::mat4& unProjection,
-			float nearClip = .01f,
-			float farClip = 100.f) override;
+		void setCamera(const CameraParameter& camParam) override;
 	};
 }
 

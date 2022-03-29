@@ -9,8 +9,6 @@
 #include <QtWidgets/qopenglwidget.h>
 #include <QtGui/qevent.h>
 #include <QtGui/qopenglshaderprogram.h>
-#include <QtGui/qopenglbuffer.h>
-#include <QtGui/qopenglvertexarrayobject.h>
 
 #include <CMakeIn.h>
 
@@ -33,14 +31,24 @@ namespace kouek
 		Q_OBJECT
 
 	private:
-		GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
+		GLint depthShaderMatrixPos, colorShaderMatrixPos, diffuseShaderMatrixPos;
 
 		float rotateSensity = .1f, moveSensity = .1f;
 		float nearClip = .01f, farClip = 10.f;
 		FPSCamera camera;
 		glm::mat4 projection, unProjection;
 
-		QOpenGLShaderProgram colorShader, diffuseShader;
+		QOpenGLShaderProgram depthShader, colorShader, diffuseShader;
+
+		struct
+		{
+			GLuint FBO, colorTex, depthRBO;
+		}depthFramebuffer{ 0 };
+
+		struct
+		{
+			GLuint FBO, colorTex, depthRBO;
+		}colorFramebuffer{ 0 };
 
 		struct
 		{
@@ -50,9 +58,12 @@ namespace kouek
 
 		struct
 		{
-			GLuint PBO = 0;
-			GLuint tex = 0;
-			GLuint VBO = 0, EBO = 0, VAO = 0;
+			GLuint VAO, VBO, EBO;
+		}screenQuad;
+
+		struct
+		{
+			GLuint tex;
 			CompVolumeRenderer::Subregion subrgn;
 			std::shared_ptr<vs::CompVolume> volume;
 			std::unique_ptr<kouek::CompVolumeMonoEyeRenderer> renderer;
@@ -60,7 +71,7 @@ namespace kouek
 
 		struct
 		{
-			bool CTRLPressed;
+			bool CTRLPressed = false;
 			QPoint lastCursorPos;
 			Qt::MouseButton lastCursorBtn = Qt::NoButton;
 		}state;
@@ -102,11 +113,15 @@ namespace kouek
 				volumeRender.volume->SetSpaceY(cfg.getSpaceY());
 				volumeRender.volume->SetSpaceZ(cfg.getSpaceZ());
 				volumeRender.renderer->setVolume(volumeRender.volume);
+
+				volumeRender.renderer->setStep(
+					3000, cfg.getBaseSpace() * 0.3);
 			}
 			catch (std::exception& e)
 			{
 				spdlog::error("File: {0}, Line: {1}, Error: {2}", __FILE__,
 					__LINE__, e.what());
+				return;
 			}
 
 			{
@@ -118,7 +133,7 @@ namespace kouek
 				tf.points.emplace_back(64, std::array<double, 4>{0.75, 0.50, 0.25, 0.4});
 				tf.points.emplace_back(224, std::array<double, 4>{0.75, 0.75, 0.25, 0.6});
 				tf.points.emplace_back(255, std::array<double, 4>{1.00, 0.75, 0.75, 0.4});
-				volumeRender.renderer->setTransferFunc(std::move(tf));
+				volumeRender.renderer->setTransferFunc(tf);
 			}
 
 			{
@@ -127,13 +142,18 @@ namespace kouek
 				param.kd = 0.8f;
 				param.ks = 0.5f;
 				param.shininess = 64.f;
-				param.bkgrndColor = { .1f,.1f,.1f,1.f };
+				param.bkgrndColor = { .2f,.3f,.4f };
 				volumeRender.renderer->setLightParam(param);
 			}
+
+			volumeRender.subrgn.center = { 3.24f,3.48f,5.21f };
+			// sync default val from this level to deeper logic
+			onSubregionUpdated();
+			onCameraUpdated();
 		}
 		~VolumeView()
 		{
-			volumeRender.renderer->unregisterOutputGLPBO();
+			volumeRender.renderer->unregisterGLResource();
 		}
 
 	signals:
@@ -182,6 +202,7 @@ namespace kouek
 				translation * subrgn.rotation * invTranslation);
 			volumeRender.renderer->setSubregion(subrgn);
 
+			// sync with other logic
 			auto [noPaddingBlockLen, padding, minLOD, maxLOD] =
 				volumeRender.volume->GetBlockLength();
 			noPaddingBlockLen -= 2 * padding;
@@ -201,6 +222,35 @@ namespace kouek
 			// load GL funcs
 			int hasInit = gladLoadGL();
 			assert(hasInit);
+
+			// depthShader
+			{
+				const char* vertShaderCode =
+					"#version 410 core\n"
+					"uniform mat4 matrix;\n"
+					"layout(location = 0) in vec3 position;\n"
+					"layout(location = 1) in vec3 v3ColorIn;\n"
+					"void main()\n"
+					"{\n"
+					"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
+					"}\n";
+				const char* fragShaderCode =
+					"#version 410 core\n"
+					"out vec4 outputColor;\n"
+					"void main()\n"
+					"{\n"
+					"    outputColor = vec4(vec3(gl_FragCoord.z), 1.0);\n"
+					"}\n";
+				depthShader.addShaderFromSourceCode(
+					QOpenGLShader::Vertex, vertShaderCode);
+				depthShader.addShaderFromSourceCode(
+					QOpenGLShader::Fragment, fragShaderCode);
+				depthShader.link();
+				assert(depthShader.isLinked());
+
+				depthShaderMatrixPos = depthShader.uniformLocation("matrix");
+				assert(depthShaderMatrixPos != -1);
+			}
 
 			// colorShader
 			{
@@ -287,15 +337,25 @@ namespace kouek
 					+1.0f,+0.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f, +1.0f,+1.0f,+1.0f
 				};
 				gizmo.model = std::make_unique<WireFrame>(verts);
-				gizmo.transform = glm::identity<glm::mat4>();
 			}
 
-			// volumeRender
+			// depthFramebuffer and colorFramebuffer
 			{
-				glGenVertexArrays(1, &volumeRender.VAO);
-				glBindVertexArray(volumeRender.VAO);
-				glGenBuffers(1, &volumeRender.VBO);
-				glBindBuffer(GL_ARRAY_BUFFER, volumeRender.VBO);
+				glGenFramebuffers(1, &depthFramebuffer.FBO);
+				glGenTextures(1, &depthFramebuffer.colorTex);
+				glGenRenderbuffers(1, &depthFramebuffer.depthRBO);
+
+				glGenFramebuffers(1, &colorFramebuffer.FBO);
+				glGenTextures(1, &colorFramebuffer.colorTex);
+				glGenRenderbuffers(1, &colorFramebuffer.depthRBO);
+			}
+
+			// screenQuad
+			{
+				glGenVertexArrays(1, &screenQuad.VAO);
+				glBindVertexArray(screenQuad.VAO);
+				glGenBuffers(1, &screenQuad.VBO);
+				glBindBuffer(GL_ARRAY_BUFFER, screenQuad.VBO);
 				{
 					std::vector<std::array<GLfloat, 8>> verts;
 					verts.push_back({ -1.f,-1.f,+0.f, +0.f,+0.f,+0.f, +0.f,+0.f });
@@ -314,8 +374,8 @@ namespace kouek
 					glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 8, (const void*)(sizeof(GLfloat) * 6));
 				}
 
-				glGenBuffers(1, &volumeRender.EBO);
-				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, volumeRender.EBO);
+				glGenBuffers(1, &screenQuad.EBO);
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, screenQuad.EBO);
 				{
 					GLushort idxes[] = { 0, 1, 3, 0, 3, 2 };
 					glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLushort) * 6, idxes, GL_STATIC_DRAW);
@@ -323,17 +383,12 @@ namespace kouek
 				glBindVertexArray(0);
 				glBindBuffer(GL_ARRAY_BUFFER, 0);
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-				glGenBuffers(1, &volumeRender.PBO);
-				glGenTextures(1, &volumeRender.tex);
 			}
 
-			glClearColor(0, 0, 0, 1.f);
-
-			volumeRender.subrgn.center = { 0,0,0 };
-			// sync default val from this level to deeper logic
-			onSubregionUpdated();
-			onCameraUpdated();
+			// volumeRender
+			{
+				glGenTextures(1, &volumeRender.tex);
+			}
 		}
 
 		void resizeGL(int w, int h) override
@@ -343,58 +398,110 @@ namespace kouek
 			unProjection = Math::inverseProjective(projection);
 			onCameraUpdated();
 
-			volumeRender.renderer->unregisterOutputGLPBO();
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, volumeRender.PBO);
-			glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(GLuint) * w * h, NULL,
-				GL_STREAM_COPY);
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-			volumeRender.renderer->registerOutputGLPBO(volumeRender.PBO, w, h);
+			volumeRender.renderer->unregisterGLResource();
+			{
+				glBindTexture(GL_TEXTURE_2D, volumeRender.tex);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				glBindTexture(GL_TEXTURE_2D, 0);
+			}
+			{
+				glBindRenderbuffer(GL_RENDERBUFFER, depthFramebuffer.depthRBO);
+				glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w, h);
+				glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
-			glBindTexture(GL_TEXTURE_2D, volumeRender.tex);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-			glTexImage2D(
-				GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA,
-				GL_UNSIGNED_INT_8_8_8_8, NULL);
-			glBindTexture(GL_TEXTURE_2D, 0);
+				glBindTexture(GL_TEXTURE_2D, depthFramebuffer.colorTex);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, (const void*)0);
+				glBindTexture(GL_TEXTURE_2D, 0);
 
-			glViewport(0, 0, w, h);
+				glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer.FBO);
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+					GL_TEXTURE_2D, depthFramebuffer.colorTex, 0);
+				glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+					GL_RENDERBUFFER, depthFramebuffer.depthRBO);
+			}
+			volumeRender.renderer->registerGLResource(
+				volumeRender.tex, depthFramebuffer.colorTex, w, h);
+
+			{
+				glBindRenderbuffer(GL_RENDERBUFFER, colorFramebuffer.depthRBO);
+				glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, w, h);
+				glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+				glBindTexture(GL_TEXTURE_2D, colorFramebuffer.colorTex);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, (const void*)0);
+				glBindTexture(GL_TEXTURE_2D, 0);
+
+				glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer.FBO);
+				glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+					GL_TEXTURE_2D, colorFramebuffer.colorTex, 0);
+				glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+					GL_RENDERBUFFER, colorFramebuffer.depthRBO);
+			}
+
+			glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
 		}
 
 		void paintGL() override
 		{
+			glEnable(GL_DEPTH_TEST);
+			glDisable(GL_BLEND);
+			glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer.FBO);
+			glClearColor(1.f, 1.f, 1.f, 1.f); // area without frag corresp to FarClip
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-			volumeRender.renderer->render();
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, volumeRender.PBO);
+			auto MVP = projection * camera.getViewMat() * gizmo.transform;
 			{
-				glBindTexture(GL_TEXTURE_2D, volumeRender.tex);
-				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width(), height(), GL_RGBA,
-					GL_UNSIGNED_INT_8_8_8_8, (const void*)0);
+				depthShader.bind();
+				glUniformMatrix4fv(
+					depthShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP);
+				gizmo.model->draw();
 			}
-			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer.FBO);
+			glClearColor(0.f, 0.f, 0.f, 1.f); // restore
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			{
+				colorShader.bind();
+				glUniformMatrix4fv(
+					colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP);
+				gizmo.model->draw();
+			}
 
 			glDisable(GL_DEPTH_TEST);
-
-			diffuseShader.bind();
-			static auto identity = glm::identity<glm::mat4>();
-			glUniformMatrix4fv(
-				diffuseShaderMatrixPos, 1, GL_FALSE,
-				(GLfloat*)&identity);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+			glClear(GL_COLOR_BUFFER_BIT);
 			{
-				glBindVertexArray(volumeRender.VAO);
-				glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
+				volumeRender.renderer->render();
+
+				diffuseShader.bind();
+				static auto identity = glm::identity<glm::mat4>();
+				glUniformMatrix4fv(
+					diffuseShaderMatrixPos, 1, GL_FALSE,
+					(GLfloat*)&identity);
+				glBindVertexArray(screenQuad.VAO);
+				{
+					glBindTexture(GL_TEXTURE_2D, colorFramebuffer.colorTex);
+					glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
+					glBindTexture(GL_TEXTURE_2D, volumeRender.tex);
+					glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
+					glBindTexture(GL_TEXTURE_2D, 0);
+				}
 				glBindVertexArray(0);
-				glBindTexture(GL_TEXTURE_2D, 0);
 			}
-
-			glEnable(GL_DEPTH_TEST);
-
-			colorShader.bind();
-			glUniformMatrix4fv(
-				colorShaderMatrixPos, 1, GL_FALSE,
-				(GLfloat*)&(projection * camera.getViewMat() * gizmo.transform));
-			gizmo.model->draw();
 		}
 
 	public:
@@ -513,7 +620,9 @@ namespace kouek
 				-forward.x, -forward.y, -forward.z, 0,
 				0, 0, 0, 1.f);
 			volumeRender.renderer->setCamera(
-				pos, rotation, unProjection, nearClip, farClip);
+				{ pos, rotation, unProjection,
+				projection[2][2], projection[3][2],
+				nearClip, farClip });
 			update();
 		}
 	};

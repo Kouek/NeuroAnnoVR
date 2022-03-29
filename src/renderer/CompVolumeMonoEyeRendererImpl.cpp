@@ -22,22 +22,23 @@ kouek::CompVolumeMonoEyeRendererImpl::~CompVolumeMonoEyeRendererImpl()
 
 }
 
-void kouek::CompVolumeMonoEyeRendererImpl::registerOutputGLPBO(
-	GLuint outPBO, uint32_t w, uint32_t h)
+void kouek::CompVolumeMonoEyeRendererImpl::registerGLResource(
+	GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h)
 {
-	renderParam.windowSize = glm::uvec2{ w,h };
-	CompVolumeMonoEyeRendererImplCUDA::registerOutputGLPBO(outPBO);
+	renderParam.windowSize = { w,h };
+	CompVolumeMonoEyeRendererImplCUDA::registerGLResource(outColorTex, inDepthTex,
+		w, h);
 }
 
-void kouek::CompVolumeMonoEyeRendererImpl::unregisterOutputGLPBO()
+void kouek::CompVolumeMonoEyeRendererImpl::unregisterGLResource()
 {
-	CompVolumeMonoEyeRendererImplCUDA::unregisterOutputGLPBO();
+	CompVolumeMonoEyeRendererImplCUDA::unregisterGLResource();
 }
 
-void kouek::CompVolumeMonoEyeRendererImpl::setStep(uint32_t maxStepNum, float maxStepDist)
+void kouek::CompVolumeMonoEyeRendererImpl::setStep(uint32_t maxStepNum, float step)
 {
 	renderParam.maxStepNum = maxStepNum;
-	renderParam.maxStepDist = maxStepDist;
+	renderParam.step = step;
 }
 
 void kouek::CompVolumeMonoEyeRendererImpl::setSubregion(const Subregion& subrgn)
@@ -163,8 +164,8 @@ void kouek::CompVolumeMonoEyeRendererImpl::render()
 			for (auto& blockAABB : blockToAABBs)
 				if (subrgnAABB.intersect(blockAABB.second))
 					currNeedBlocks.emplace(
-						std::array<uint32_t, 4>{ blockAABB.first[0],
-						blockAABB.first[0], blockAABB.first[0], 0 });
+						std::array{ blockAABB.first[0],
+						blockAABB.first[1], blockAABB.first[2], (uint32_t)0 });
 			// OBB filter then
 			for (auto itr = currNeedBlocks.begin(); itr != currNeedBlocks.end();)
 				if (!subrgnOBB.intersect_obb(
@@ -237,15 +238,13 @@ void kouek::CompVolumeMonoEyeRendererImpl::render()
 		renderParam.windowSize.x, renderParam.windowSize.y);
 }
 
-void kouek::CompVolumeMonoEyeRendererImpl::setCamera(
-	const glm::vec3& pos,
-	const glm::mat4& rotation,
-	const glm::mat4& unProjection,
-	float nearClip, float farClip)
+void kouek::CompVolumeMonoEyeRendererImpl::setCamera(const CameraParameter& camParam)
 {
-	renderParam.camPos = pos;
-	renderParam.camRotaion = rotation;
-	renderParam.unProjection = unProjection;
-	renderParam.nearClip = nearClip;
-	renderParam.farClip = farClip;
+	renderParam.camPos = camParam.pos;
+	renderParam.camRotaion = camParam.rotation;
+	renderParam.unProjection = camParam.unProjection;
+	renderParam.projection22 = camParam.projection22;
+	renderParam.projection23 = camParam.projection23;
+	renderParam.nearClip = camParam.nearClip;
+	renderParam.farClip = camParam.farClip;
 }
