@@ -6,5 +6,3 @@ include/CMakeIn.h
 .vs/
 
 # Output
-bin/Debug/
-bin/Release/

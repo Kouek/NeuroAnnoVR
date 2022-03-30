@@ -57,12 +57,6 @@ namespace kouek
 
 		virtual void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h) = 0;
 		virtual void unregisterGLResource() = 0;
-		virtual void setStep(uint32_t maxStepNum, float step) = 0;
-		virtual void setSubregion(const Subregion& subrgn) = 0;
-		virtual void setTransferFunc(const vs::TransferFunc& tf) = 0;
-		virtual void setLightParam(const LightParamter& lightParam) = 0;
-		virtual void setVolume(std::shared_ptr<vs::CompVolume> volume) = 0;
-		virtual void render() = 0;
 
 		struct CameraParameter
 		{
@@ -76,7 +70,22 @@ namespace kouek
 
 	class CompVolumeDualEyeRenderer : public CompVolumeRenderer
 	{
+	public:
+		static std::unique_ptr<CompVolumeDualEyeRenderer> create(
+			const CUDAParameter& cudaParam
+		);
 
+		virtual void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h) = 0;
+		virtual void unregisterGLResource() = 0;
+
+		struct CameraParameter
+		{
+			const std::array<glm::vec3, 2> pos2;
+			const glm::mat4& rotation;
+			const glm::mat4& unProjection;
+			float nearClip = .01f, farClip = 100.f;
+		};
+		virtual void setCamera(const CameraParameter& camParam) = 0;
 	};
 }
 
