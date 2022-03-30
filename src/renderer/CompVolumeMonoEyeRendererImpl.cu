@@ -267,7 +267,15 @@ namespace kouek
 				d_renderParam.lightParam.bkgrndColor.r,
 				d_renderParam.lightParam.bkgrndColor.g,
 				d_renderParam.lightParam.bkgrndColor.b,
-				0);
+				d_renderParam.lightParam.bkgrndColor.a);
+
+#ifdef TEST_IN_DEPTH_TEX
+			float4 depth4 = tex2D<float4>(d_depthTex, windowX, windowY);
+			float meshBoundDep = d_renderParam.projection23 /
+				(depth4.x + d_renderParam.projection22) / d_renderParam.farClip;
+			d_color[windowFlatIdx] = rgbaFloatToUbyte4(meshBoundDep, meshBoundDep, meshBoundDep, 1.f);
+			return;
+#endif // TEST_IN_DEPTH_TEX
 
 			glm::vec3 rayDrc;
 			float tEnter, tExit;
@@ -287,11 +295,11 @@ namespace kouek
 				//   then compute upper bound of steps
 				//   for Mesh-Volume mixed rendering
 				{
-					uchar4 depth4 = tex2D<uchar4>(d_depthTex, windowX, windowY);
-					float tMeshBound = d_renderParam.projection23 /
-						(depth4.x / 255.f + d_renderParam.projection22);
-					if (tFarClip > tMeshBound)
-						tFarClip = tMeshBound;
+					float4 depth4 = tex2D<float4>(d_depthTex, windowX, windowY);
+					float meshBoundDep = d_renderParam.projection23 /
+						(depth4.x + d_renderParam.projection22);
+					if (tFarClip > meshBoundDep)
+						tFarClip = meshBoundDep;
 				}
 				tFarClip /= absRayDrcZ;
 				//   rotate
@@ -334,6 +342,13 @@ namespace kouek
 				return;
 			glm::vec3 rayPos = d_renderParam.camPos + tEnter * rayDrc;
 
+#ifdef TEST_RAY_ENTER_EXIT_DIFF
+			// TEST: Ray Enter Difference
+			float diff = tExit - tEnter;
+			d_color[windowFlatIdx] = rgbaFloatToUbyte4(diff, diff, diff, 1.f);
+			return;
+#endif // TEST_RAY_ENTER_EXIT_DIFF
+
 #ifdef TEST_RAY_ENTER_POSITION
 			// TEST: Ray Enter Position
 			d_color[windowFlatIdx] = rgbaFloatToUbyte4(
@@ -343,19 +358,29 @@ namespace kouek
 			return;
 #endif // TEST_RAY_ENTER_POSITION
 
+#ifdef TEST_RAY_EXIT_POSITION
+			// TEST: Ray Exit Position
+			rayPos = d_renderParam.camPos + tExit * rayDrc;
+			d_color[windowFlatIdx] = rgbaFloatToUbyte4(
+				.5f * rayPos.x / d_renderParam.subrgn.halfW,
+				.5f * rayPos.y / d_renderParam.subrgn.halfH,
+				.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+			return;
+#endif // TEST_RAY_EXIT_POSITION
+
 			glm::vec3 subrgnCenterInWdSp = {
 				.5f * d_renderParam.subrgn.halfW,
 				.5f * d_renderParam.subrgn.halfH,
 				.5f * d_renderParam.subrgn.halfD,
 			};
+			glm::vec3 rayDrcMulStp = rayDrc * d_renderParam.step;
 			glm::vec3 samplePos;
 			glm::vec4 color = glm::zero<glm::vec4>();
 			float sampleVal = 0;
 			uint32_t stepNum = 0;
-			for (; stepNum <= d_renderParam.maxStepNum && tEnter <= tExit;
-				++stepNum,
-				tEnter += d_renderParam.step,
-				rayPos += rayDrc * d_renderParam.step)
+			for (;
+				stepNum <= d_renderParam.maxStepNum && tEnter <= tExit;
+				++stepNum, tEnter += d_renderParam.step, rayPos += rayDrcMulStp)
 			{
 				// ray pos in World Space -> sample pos in Voxel Space
 				samplePos =
@@ -408,6 +433,8 @@ namespace kouek
 			
 			cudaGraphicsMapResources(1, &inDepthTexRsc, stream);
 			cudaGraphicsSubResourceGetMappedArray(&d_depthArr, inDepthTexRsc, 0, 0);
+			cudaChannelFormatDesc ch;
+			cudaGetChannelDesc(&ch, d_depthArr);
 			d_depth.rscDesc.res.array.array = d_depthArr;
 			cudaCreateTextureObject(&d_depth.tex, &d_depth.rscDesc,
 				&d_depth.texDesc, nullptr);

@@ -33,7 +33,7 @@ namespace kouek
 	private:
 		GLint depthShaderMatrixPos, colorShaderMatrixPos, diffuseShaderMatrixPos;
 
-		float rotateSensity = .1f, moveSensity = .1f;
+		float rotateSensity = .1f, moveSensity = .01f;
 		float nearClip = .01f, farClip = 10.f;
 		FPSCamera camera;
 		glm::mat4 projection, unProjection;
@@ -97,7 +97,7 @@ namespace kouek
 				CompVolumeMonoEyeRenderer::CUDAParameter param;
 				SetCUDACtx(0);
 				param.ctx = GetCUDACtx();
-				param.texUnitNum = 1;
+				param.texUnitNum = 6;
 				param.texUnitDim = { 1024,1024,1024 };
 				volumeRender.renderer = CompVolumeMonoEyeRenderer::create(param);
 			}
@@ -142,7 +142,7 @@ namespace kouek
 				param.kd = 0.8f;
 				param.ks = 0.5f;
 				param.shininess = 64.f;
-				param.bkgrndColor = { .2f,.3f,.4f };
+				param.bkgrndColor = { .2f,.3f,.4f,.1f };
 				volumeRender.renderer->setLightParam(param);
 			}
 
@@ -394,7 +394,7 @@ namespace kouek
 		void resizeGL(int w, int h) override
 		{
 			projection = glm::perspectiveFov(
-				glm::radians(90.f), (float)w, (float)h, nearClip, farClip);
+				glm::radians(60.f), (float)w, (float)h, nearClip, farClip);
 			unProjection = Math::inverseProjective(projection);
 			onCameraUpdated();
 
@@ -417,8 +417,8 @@ namespace kouek
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
-					GL_RGBA, GL_UNSIGNED_BYTE, (const void*)0);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0,
+					GL_RGBA, GL_FLOAT, (const void*)0);
 				glBindTexture(GL_TEXTURE_2D, 0);
 
 				glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer.FBO);
@@ -619,10 +619,9 @@ namespace kouek
 				up.x, up.y, up.z, 0,
 				-forward.x, -forward.y, -forward.z, 0,
 				0, 0, 0, 1.f);
+			
 			volumeRender.renderer->setCamera(
-				{ pos, rotation, unProjection,
-				projection[2][2], projection[3][2],
-				nearClip, farClip });
+				{ pos, rotation, unProjection, nearClip, farClip });
 			update();
 		}
 	};

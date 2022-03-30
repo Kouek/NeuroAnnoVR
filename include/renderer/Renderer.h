@@ -25,7 +25,7 @@ namespace kouek
 			float kd;
 			float ks;
 			float shininess;
-			glm::vec3 bkgrndColor;
+			glm::vec4 bkgrndColor;
 		};
 		/// <summary>
 		/// Subregion is a zOx OBB bounding box in Ray-Casting space
@@ -69,7 +69,6 @@ namespace kouek
 			const glm::vec3& pos;
 			const glm::mat4& rotation;
 			const glm::mat4& unProjection;
-			float projection22, projection23;	
 			float nearClip = .01f, farClip = 100.f;
 		};
 		virtual void setCamera(const CameraParameter& camParam) = 0;

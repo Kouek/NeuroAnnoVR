@@ -41,6 +41,7 @@ namespace kouek
 			glm::mat4 unProjection;
 			glm::mat4 camRotaion;
 			glm::vec3 camPos;
+			glm::vec3 camFwd;
 			CompVolumeRenderer::Subregion subrgn;
 			CompVolumeRenderer::LightParamter lightParam;
 		};

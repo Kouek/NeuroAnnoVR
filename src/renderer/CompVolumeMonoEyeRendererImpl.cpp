@@ -243,8 +243,13 @@ void kouek::CompVolumeMonoEyeRendererImpl::setCamera(const CameraParameter& camP
 	renderParam.camPos = camParam.pos;
 	renderParam.camRotaion = camParam.rotation;
 	renderParam.unProjection = camParam.unProjection;
-	renderParam.projection22 = camParam.projection22;
-	renderParam.projection23 = camParam.projection23;
 	renderParam.nearClip = camParam.nearClip;
 	renderParam.farClip = camParam.farClip;
+
+	// computed val
+	renderParam.camFwd = glm::normalize(-renderParam.camRotaion[2]);
+	renderParam.projection22 = -(renderParam.farClip + renderParam.nearClip) /
+		(renderParam.farClip - renderParam.nearClip);
+	renderParam.projection23 = -2.f * renderParam.farClip * renderParam.nearClip /
+		(renderParam.farClip - renderParam.nearClip);
 }
