@@ -97,7 +97,7 @@ namespace kouek
 				CompVolumeMonoEyeRenderer::CUDAParameter param;
 				SetCUDACtx(0);
 				param.ctx = GetCUDACtx();
-				param.texUnitNum = 6;
+				param.texUnitNum = 1;
 				param.texUnitDim = { 1024,1024,1024 };
 				volumeRender.renderer = CompVolumeMonoEyeRenderer::create(param);
 			}

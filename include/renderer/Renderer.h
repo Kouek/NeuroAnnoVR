@@ -48,7 +48,7 @@ namespace kouek
 		virtual void render() = 0;
 	};
 
-	class CompVolumeMonoEyeRenderer : public CompVolumeRenderer
+	class CompVolumeMonoEyeRenderer : virtual public CompVolumeRenderer
 	{
 	public:
 		static std::unique_ptr<CompVolumeMonoEyeRenderer> create(
