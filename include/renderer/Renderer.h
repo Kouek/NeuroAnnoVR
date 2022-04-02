@@ -3,7 +3,7 @@
 
 #include <glad/glad.h>
 
-#include <renderer/math.h>
+#include <util/Math.h>
 
 #include <VolumeSlicer/volume.hpp>
 #include <VolumeSlicer/transfer_function.hpp>
@@ -68,10 +68,10 @@ namespace kouek
 		virtual void setCamera(const CameraParameter& camParam) = 0;
 	};
 
-	class CompVolumeDualEyeRenderer : public CompVolumeRenderer
+	class CompVolumeFAVRRenderer : virtual public CompVolumeRenderer
 	{
 	public:
-		static std::unique_ptr<CompVolumeDualEyeRenderer> create(
+		static std::unique_ptr<CompVolumeFAVRRenderer> create(
 			const CUDAParameter& cudaParam
 		);
 

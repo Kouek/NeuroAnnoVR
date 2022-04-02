@@ -1,0 +1,96 @@
+{
+  "default_bindings": [
+    {
+      "controller_type": "vive_controller",
+      "binding_url": "NeuroAnnoVRBindingViveController.json"
+    }
+  ],
+  "action_sets": [
+    {
+      "name": "/actions/focus",
+      "usage": "Interection in Focus Mode"
+    }
+  ],
+  "actions": [
+    {
+      "name": "/actions/focus/in/left_axis1_pull",
+      "type": "vector1"
+    },
+    {
+      "name": "/actions/focus/in/left_axis1_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/right_axis1_press",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/left_south_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/left_north_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/left_east_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/left_west_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/right_south_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/right_north_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/right_east_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/right_west_click",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/left_applicationmenu_press",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/right_applicationmenu_press",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/focus/in/Left_Pose",
+      "type": "pose"
+    },
+    {
+      "name": "/actions/focus/in/Right_Pose",
+      "type": "pose"
+    }
+  ],
+  "localization": [
+    {
+      "language_tag": "en_US",
+      "/actions/focus/in/left_applicationmenu_press": "Change Left Hand Control Target",
+      "/actions/focus/in/left_axis1_pull": "Change Subregion(Rough)",
+      "/actions/focus/in/left_axis1_click": "Change Subregion(Fine)",
+      "/actions/focus/in/left_south_click": "Move Away",
+      "/actions/focus/in/left_north_click": "Move Close",
+      "/actions/focus/in/left_west_click": "Decrease Raycast Steps",
+      "/actions/focus/in/left_east_click": "Increase Raycast Steps",
+      "/actions/focus/in/right_axis1_press": "Annotator Operate",
+      "/actions/focus/in/right_south_click": "Cancel Annotator Operation",
+      "/actions/focus/in/right_north_click": "TODO",
+      "/actions/focus/in/right_west_click": "Previous Path",
+      "/actions/focus/in/right_east_click": "Next Path",
+      "/actions/focus/in/right_applicationmenu_press": "Change Annotator Mode",
+      "/actions/focus/in/Right_Pose": "Right Hand Pose",
+      "/actions/focus/in/Left_Pose": "Left Hand Pose"
+    }
+  ]
+}

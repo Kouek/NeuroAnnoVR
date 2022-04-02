@@ -276,14 +276,6 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 		d_renderParam.lightParam.bkgrndColor.b,
 		d_renderParam.lightParam.bkgrndColor.a);
 
-#ifdef TEST_IN_DEPTH_TEX
-	float4 depth4 = tex2D<float4>(d_depthTex, windowX, windowY);
-	float meshBoundDep = d_renderParam.projection23 /
-		(depth4.x + d_renderParam.projection22) / d_renderParam.farClip;
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(meshBoundDep, meshBoundDep, meshBoundDep, 1.f);
-	return;
-#endif // TEST_IN_DEPTH_TEX
-
 	glm::vec3 rayDrc;
 	float tEnter, tExit;
 	{
@@ -302,9 +294,9 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 		//   then compute upper bound of steps
 		//   for Mesh-Volume mixed rendering
 		{
-			float4 depth4 = tex2D<float4>(d_depthTex, windowX, windowY);
+			uchar4 depth4 = tex2D<uchar4>(d_depthTex, windowX, windowY);
 			float meshBoundDep = d_renderParam.projection23 /
-				((depth4.x * 2.f - 1.f) + d_renderParam.projection22);
+				((depth4.x / 255.f * 2.f - 1.f) + d_renderParam.projection22);
 			if (tFarClip > meshBoundDep)
 				tFarClip = meshBoundDep;
 		}
@@ -437,8 +429,6 @@ void kouek::CompVolumeRendererCUDA::MonoEyeFunc::render(uint32_t windowW, uint32
 
 	cudaGraphicsMapResources(1, &inDepthTexRsc, stream);
 	cudaGraphicsSubResourceGetMappedArray(&d_depthArr, inDepthTexRsc, 0, 0);
-	cudaChannelFormatDesc ch;
-	cudaGetChannelDesc(&ch, d_depthArr);
 	d_depth.rscDesc.res.array.array = d_depthArr;
 	cudaCreateTextureObject(&d_depth.tex, &d_depth.rscDesc,
 		&d_depth.texDesc, nullptr);

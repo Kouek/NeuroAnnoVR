@@ -13,6 +13,7 @@
 #include <CMakeIn.h>
 
 #include <camera/FPSCamera.h>
+#include <util/Math.h>
 #include <util/RenderObj.h>
 #include <util/VolumeCfg.h>
 
@@ -31,13 +32,12 @@ namespace kouek
 		Q_OBJECT
 
 	private:
-		GLint depthShaderMatrixPos, colorShaderMatrixPos, diffuseShaderMatrixPos;
-
 		float rotateSensity = .1f, moveSensity = .01f;
 		float nearClip = .01f, farClip = 10.f;
 		FPSCamera camera;
 		glm::mat4 projection, unProjection;
 
+		GLint depthShaderMatrixPos, colorShaderMatrixPos, diffuseShaderMatrixPos;
 		QOpenGLShaderProgram depthShader, colorShader, diffuseShader;
 
 		struct
@@ -137,7 +137,7 @@ namespace kouek
 			}
 
 			{
-				CompVolumeMonoEyeRenderer::LightParamter param;
+				CompVolumeRenderer::LightParamter param;
 				param.ka = 0.5f;
 				param.kd = 0.8f;
 				param.ks = 0.5f;
@@ -417,8 +417,8 @@ namespace kouek
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0,
-					GL_RGBA, GL_FLOAT, (const void*)0);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, (const void*)0);
 				glBindTexture(GL_TEXTURE_2D, 0);
 
 				glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer.FBO);

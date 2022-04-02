@@ -31,15 +31,28 @@ namespace kouek
 		{
 			return view;
 		}
+		inline const glm::vec3& getPos() const
+		{
+			return pos;
+		}
 		inline std::tuple<const glm::vec3&, const glm::vec3&,
 			const glm::vec3&, const glm::vec3&>
 			getRFUP() const
 		{
 			return { right,forward,up,pos };
 		}
+		inline void setPos(const glm::vec3& pos)
+		{
+			this->pos = pos;
+
+			view[3][0] = -glm::dot(right, pos);
+			view[3][1] = -glm::dot(up, pos);
+			view[3][2] = glm::dot(forward, pos);
+		}
 		inline void move(float rightStep, float upStep, float forwardStep)
 		{
 			pos += forwardStep * forward + rightStep * right + upStep * up;
+
 			view[3][0] = -glm::dot(right, pos);
 			view[3][1] = -glm::dot(up, pos);
 			view[3][2] = glm::dot(forward, pos);

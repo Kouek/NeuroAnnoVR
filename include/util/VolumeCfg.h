@@ -1,6 +1,8 @@
 #ifndef KOUEK_VOLUME_CFG_H
 #define KOUEK_VOLUME_CFG_H
 
+#include <string_view>
+
 #include <fstream>
 #include <sstream>
 
@@ -21,12 +23,12 @@ namespace kouek
 		/// Init Volume Config from volumeCfgPath.
 		/// </summary>
 		/// <param name="volumeCfgPath">absolute Path of Volume Config File</param>
-		VolumeConfig(const char* volumeCfgPath)
+		VolumeConfig(std::string_view volumeCfgPath)
 		{
 			using namespace std;
 			using namespace nlohmann;
 
-			ifstream in(volumeCfgPath);
+			ifstream in(volumeCfgPath.data());
 			if (!in.is_open()) throw runtime_error("Cannot open file: " + string(volumeCfgPath));
 
 			try

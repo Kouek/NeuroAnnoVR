@@ -1,0 +1,193 @@
+{
+  "bindings": {
+    "/actions/focus": {
+      "haptics": [
+        {
+          "output": "/actions/focus/out/left_haptic",
+          "path": "/user/hand/left/output/haptic"
+        },
+        {
+          "output": "/actions/focus/out/right_haptic",
+          "path": "/user/hand/right/output/haptic"
+        }
+      ],
+      "poses": [
+        {
+          "output": "/actions/focus/in/Left_Pose",
+          "path": "/user/hand/left/pose/raw"
+        },
+        {
+          "output": "/actions/focus/in/Right_Pose",
+          "path": "/user/hand/right/pose/raw"
+        }
+      ],
+      "sources": [
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/left_system_press"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/left/input/system"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/left_axis1_click"
+            },
+            "pull": {
+              "output": "/actions/focus/in/left_axis1_pull"
+            }
+          },
+          "mode": "trigger",
+          "path": "/user/hand/left/input/trigger"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/right_system_press"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/right/input/system"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/right_grip_press"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/right/input/grip"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/left_grip_press"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/left/input/grip"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/left_applicationmenu_press"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/left/input/application_menu"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/right_applicationmenu_press"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/right/input/application_menu"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/left_axis0_press"
+            },
+            "position": {
+              "output": "/actions/focus/in/left_axis0_value"
+            },
+            "touch": {
+              "output": "/actions/focus/in/left_axis0_touch"
+            }
+          },
+          "mode": "trackpad",
+          "path": "/user/hand/left/input/trackpad"
+        },
+        {
+          "inputs": {
+            "south": {
+              "output": "/actions/focus/in/left_south_click"
+            },
+            "north": {
+              "output": "/actions/focus/in/left_north_click"
+            },
+            "east": {
+              "output": "/actions/focus/in/left_east_click"
+            },
+            "west": {
+              "output": "/actions/focus/in/left_west_click"
+            }
+          },
+          "mode": "dpad_click",
+          "parameters": {
+            "sub_mode": "click"
+          },
+          "path": "/user/hand/left/input/trackpad"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/right_axis0_press"
+            },
+            "position": {
+              "output": "/actions/focus/in/right_axis0_value"
+            },
+            "touch": {
+              "output": "/actions/focus/in/right_axis0_touch"
+            }
+          },
+          "mode": "trackpad",
+          "path": "/user/hand/right/input/trackpad"
+        },
+        {
+          "inputs": {
+            "pull": {
+              "output": "/actions/focus/in/right_axis1_value"
+            },
+            "touch": {
+              "output": "/actions/focus/in/right_axis1_touch"
+            }
+          },
+          "mode": "trigger",
+          "path": "/user/hand/right/input/trigger"
+        },
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/focus/in/right_axis1_press"
+            }
+          },
+          "mode": "button",
+          "parameters": {
+            "haptic_amplitude": "0"
+          },
+          "path": "/user/hand/right/input/trigger"
+        },
+        {
+          "inputs": {
+            "south": {
+              "output": "/actions/focus/in/right_south_click"
+            },
+            "north": {
+              "output": "/actions/focus/in/right_north_click"
+            },
+            "east": {
+              "output": "/actions/focus/in/right_east_click"
+            },
+            "west": {
+              "output": "/actions/focus/in/right_west_click"
+            }
+          },
+          "mode": "dpad_click",
+          "parameters": {
+            "sub_mode": "click"
+          },
+          "path": "/user/hand/right/input/trackpad"
+        }
+      ]
+    }
+  },
+  "controller_type": "vive_controller",
+  "description": "",
+  "name": "Default bindings for legacy applications for Vive Controllers"
+}

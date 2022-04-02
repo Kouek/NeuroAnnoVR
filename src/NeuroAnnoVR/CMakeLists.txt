@@ -5,11 +5,23 @@ add_executable(
 	"main.cpp"
 	"${THIRDPARTY_DIR}/glad/src/glad.c"
 )
-if(WIN32)
-	message("WIN32: Linking ${OPENVR_BIN_DIR}/win64/openvr_api.dll")
+target_include_directories(
+	${TARGET_NAME}
+	PRIVATE
+	${OPENVR_INC_DIR}
+)
+LIST(
+	APPEND
+	LIBS
+	${Qt5_LIBS}
+	"CompVolumeRenderer"
+)
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+	# No need to link OpenVR shared libs again,
+	# since they were copied to executable output path
 	target_link_libraries(
 		${TARGET_NAME}
-		PRIVATE
-		"${OPENVR_BIN_DIR}/win64/openvr_api.dll"
+		${OPENVR_LIBS}
+		${LIBS}
 	)
 endif()
