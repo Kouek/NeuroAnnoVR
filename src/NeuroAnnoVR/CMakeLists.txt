@@ -1,8 +1,11 @@
 set(TARGET_NAME "NeuroAnnoVR")
 
+aux_source_directory(${CMAKE_CURRENT_LIST_DIR} SRCS)
+
 add_executable(
 	${TARGET_NAME}
-	"main.cpp"
+	${SRCS}
+	"EditorWindow.ui" # Necessary! Or it won't be MOC
 	"${THIRDPARTY_DIR}/glad/src/glad.c"
 )
 target_include_directories(

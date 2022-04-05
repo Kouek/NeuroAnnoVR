@@ -11,7 +11,7 @@ using namespace kouek::CompVolumeRendererCUDA;
 //   Allocated when needed,
 //   freeed when CompVolumeRendererCUDA::FAVRFunc is deconstructed
 __constant__ CompVolumeParameter d_compVolumeParam;
-__constant__ RenderParameter d_renderParam;
+__constant__ FAVRRenderParameter d_renderParam;
 
 __constant__ uint32_t d_blockOffsets[MAX_LOD + 1];
 __constant__ cudaTextureObject_t d_textures[MAX_TEX_UNIT_NUM];
@@ -25,16 +25,17 @@ __constant__ cudaTextureObject_t d_preIntTransferFunc;
 uint32_t* d_mappingTable = nullptr;
 __constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
 
-cudaGraphicsResource_t outColorTexRsc = nullptr, inDepthTexRsc = nullptr;
-glm::u8vec4* d_color = nullptr;
+cudaGraphicsResource_t outColorTexRsc2[2] = { nullptr };
+cudaGraphicsResource_t inDepthTexRsc2[2] = { nullptr };
+glm::u8vec4* d_color2[2] = { nullptr };
 struct
 {
 	cudaResourceDesc rscDesc;
 	cudaTextureDesc texDesc;
-	cudaTextureObject_t tex;
-}d_depth;
+}depthTexDesc;
+cudaTextureObject_t d_depthTex2[2];
 size_t d_colorSize;
-cudaArray_t d_colorArr = nullptr, d_depthArr = nullptr;
+cudaArray_t d_colorArr2[2] = { nullptr }, d_depthArr2[2] = { nullptr };
 cudaStream_t stream = nullptr;
 
 kouek::CompVolumeRendererCUDA::FAVRFunc::~FAVRFunc()
@@ -56,10 +57,11 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadCompVolumeParam(const CompVo
 		cudaMemcpyToSymbol(d_compVolumeParam, &param, sizeof(CompVolumeParameter)));
 }
 
-void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadRenderParam(const RenderParameter& param)
+void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadRenderParam(
+	const FAVRRenderParameter& param)
 {
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_renderParam, &param, sizeof(RenderParameter)));
+		cudaMemcpyToSymbol(d_renderParam, &param, sizeof(FAVRRenderParameter)));
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadBlockOffs(const uint32_t* hostMemDat, size_t num)
@@ -105,40 +107,52 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadMappingTable(const uint32_t*
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::registerGLResource(
-	GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h)
+	GLuint outLftColorTex, GLuint outRhtColorTex,
+	GLuint inLftDepthTex, GLuint inRhtDepthTex,
+	uint32_t w, uint32_t h)
 {
 	d_colorSize = sizeof(glm::u8vec4) * w * h;
 	CUDA_RUNTIME_API_CALL(
-		cudaGraphicsGLRegisterImage(&outColorTexRsc, outColorTex,
+		cudaGraphicsGLRegisterImage(&outColorTexRsc2[0], outLftColorTex,
 			GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard));
 	CUDA_RUNTIME_API_CALL(
-		cudaMalloc(&d_color, d_colorSize));
+		cudaGraphicsGLRegisterImage(&outColorTexRsc2[1], outRhtColorTex,
+			GL_TEXTURE_2D, cudaGraphicsRegisterFlagsWriteDiscard));
+	CUDA_RUNTIME_API_CALL(
+		cudaMalloc(&d_color2[0], d_colorSize));
+	CUDA_RUNTIME_API_CALL(
+		cudaMalloc(&d_color2[1], d_colorSize));
 
 	CUDA_RUNTIME_API_CALL(
-		cudaGraphicsGLRegisterImage(&inDepthTexRsc, inDepthTex,
+		cudaGraphicsGLRegisterImage(&inDepthTexRsc2[0], inLftDepthTex,
 			GL_TEXTURE_2D, cudaGraphicsRegisterFlagsReadOnly));
-	memset(&d_depth.rscDesc, 0, sizeof(cudaResourceDesc));
-	d_depth.rscDesc.resType = cudaResourceTypeArray;
-	memset(&d_depth.texDesc, 0, sizeof(cudaTextureDesc));
-	d_depth.texDesc.normalizedCoords = 0;
-	d_depth.texDesc.filterMode = cudaFilterModePoint;
-	d_depth.texDesc.addressMode[0] = cudaAddressModeClamp;
-	d_depth.texDesc.addressMode[1] = cudaAddressModeClamp;
-	d_depth.texDesc.readMode = cudaReadModeElementType;
+	CUDA_RUNTIME_API_CALL(
+		cudaGraphicsGLRegisterImage(&inDepthTexRsc2[1], inRhtDepthTex,
+			GL_TEXTURE_2D, cudaGraphicsRegisterFlagsReadOnly));
+
+	memset(&depthTexDesc.rscDesc, 0, sizeof(cudaResourceDesc));
+	depthTexDesc.rscDesc.resType = cudaResourceTypeArray;
+	memset(&depthTexDesc.texDesc, 0, sizeof(cudaTextureDesc));
+	depthTexDesc.texDesc.normalizedCoords = 0;
+	depthTexDesc.texDesc.filterMode = cudaFilterModePoint;
+	depthTexDesc.texDesc.addressMode[0] = cudaAddressModeClamp;
+	depthTexDesc.texDesc.addressMode[1] = cudaAddressModeClamp;
+	depthTexDesc.texDesc.readMode = cudaReadModeElementType;
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::unregisterGLResource()
 {
-	if (outColorTexRsc != nullptr)
-	{
-		CUDA_RUNTIME_API_CALL(cudaGraphicsUnregisterResource(outColorTexRsc));
-		outColorTexRsc = nullptr;
-		CUDA_RUNTIME_API_CALL(cudaFree(d_color));
-		d_color = nullptr;
+	for (uint8_t idx = 0; idx < 2; ++idx)
+		if (outColorTexRsc2[idx] != nullptr)
+		{
+			CUDA_RUNTIME_API_CALL(cudaGraphicsUnregisterResource(outColorTexRsc2[idx]));
+			outColorTexRsc2[idx] = nullptr;
+			CUDA_RUNTIME_API_CALL(cudaFree(d_color2[idx]));
+			d_color2[idx] = nullptr;
 
-		CUDA_RUNTIME_API_CALL(cudaGraphicsUnregisterResource(inDepthTexRsc));
-		inDepthTexRsc = nullptr;
-	}
+			CUDA_RUNTIME_API_CALL(cudaGraphicsUnregisterResource(inDepthTexRsc2[idx]));
+			inDepthTexRsc2[idx] = nullptr;
+		}
 }
 
 __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
@@ -264,20 +278,30 @@ __device__ glm::vec3 phongShadingLOD0(
 // WARNING:
 // - Declaring type of param d_depth as [const cudaTextureObject_t &]
 //   will cause unknown error at tex2D()
-__global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTex)
+__global__ void renderKernel(
+	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR,
+	cudaTextureObject_t d_depthTexL, cudaTextureObject_t d_depthTexR)
 {
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
 	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
 	if (windowX >= d_renderParam.windowSize.x || windowY >= d_renderParam.windowSize.y) return;
 	size_t windowFlatIdx = (size_t)windowY * d_renderParam.windowSize.x + windowX;
 
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(
-		d_renderParam.lightParam.bkgrndColor.r,
-		d_renderParam.lightParam.bkgrndColor.g,
-		d_renderParam.lightParam.bkgrndColor.b,
-		d_renderParam.lightParam.bkgrndColor.a);
+	if (blockIdx.z == 0) // render Left Eye 
+		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(
+			d_renderParam.lightParam.bkgrndColor.r,
+			d_renderParam.lightParam.bkgrndColor.g,
+			d_renderParam.lightParam.bkgrndColor.b,
+			d_renderParam.lightParam.bkgrndColor.a);
+	else // render Right Eye
+		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(
+			d_renderParam.lightParam.bkgrndColor.r,
+			d_renderParam.lightParam.bkgrndColor.g,
+			d_renderParam.lightParam.bkgrndColor.b,
+			d_renderParam.lightParam.bkgrndColor.a);
 
 	glm::vec3 rayDrc;
+	const glm::vec3& camPos = d_renderParam.camPos2[blockIdx.z];
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
@@ -295,7 +319,9 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 		//   then compute upper bound of steps
 		//   for Mesh-Volume mixed rendering
 		{
-			uchar4 depth4 = tex2D<uchar4>(d_depthTex, windowX, windowY);
+			uchar4 depth4 = blockIdx.z == 0 ?
+				tex2D<uchar4>(d_depthTexL, windowX, windowY) :
+				tex2D<uchar4>(d_depthTexR, windowX, windowY);
 			float meshBoundDep = d_renderParam.projection23 /
 				((depth4.x / 255.f * 2.f - 1.f) + d_renderParam.projection22);
 			if (tFarClip > meshBoundDep)
@@ -310,8 +336,7 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 		// Ray intersect Subregion(OBB)
 		// equivalent to Ray intersect AABB in Subreion Space
 		//   for pos, apply Rotation and Translation
-		glm::vec4 v42{ d_renderParam.camPos.x, d_renderParam.camPos.y,
-			d_renderParam.camPos.z, 1.f };
+		glm::vec4 v42{ camPos.x, camPos.y, camPos.z, 1.f };
 		v42 = d_renderParam.subrgn.fromWorldToSubrgn * v42;
 		//   for drc, apply Rotation only
 		v41.w = 0;
@@ -340,7 +365,7 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 	// no intersection
 	if (tEnter >= tExit)
 		return;
-	glm::vec3 rayPos = d_renderParam.camPos + tEnter * rayDrc;
+	glm::vec3 rayPos = camPos + tEnter * rayDrc;
 
 #ifdef TEST_RAY_ENTER_EXIT_DIFF
 	// TEST: Ray Enter Difference
@@ -416,7 +441,10 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 	color.g = powf(color.g, GAMMA_CORRECT_COEF);
 	color.b = powf(color.b, GAMMA_CORRECT_COEF);
 
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
+	if (blockIdx.z == 0)
+		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
+	else
+		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::render(uint32_t windowW, uint32_t windowH)
@@ -425,24 +453,31 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(uint32_t windowW, uint32_t 
 		CUDA_RUNTIME_CHECK(cudaStreamCreate(&stream));
 
 	// from here, called per frame, thus no CUDA_RUNTIME_API_CHECK
-	cudaGraphicsMapResources(1, &outColorTexRsc, stream);
-	cudaGraphicsSubResourceGetMappedArray(&d_colorArr, outColorTexRsc, 0, 0);
+	for (uint8_t idx = 0; idx < 2; ++idx)
+	{
+		cudaGraphicsMapResources(1, &outColorTexRsc2[idx], stream);
+		cudaGraphicsSubResourceGetMappedArray(&d_colorArr2[idx], outColorTexRsc2[idx], 0, 0);
 
-	cudaGraphicsMapResources(1, &inDepthTexRsc, stream);
-	cudaGraphicsSubResourceGetMappedArray(&d_depthArr, inDepthTexRsc, 0, 0);
-	d_depth.rscDesc.res.array.array = d_depthArr;
-	cudaCreateTextureObject(&d_depth.tex, &d_depth.rscDesc,
-		&d_depth.texDesc, nullptr);
+		cudaGraphicsMapResources(1, &inDepthTexRsc2[idx], stream);
+		cudaGraphicsSubResourceGetMappedArray(&d_depthArr2[idx], inDepthTexRsc2[idx], 0, 0);
+		depthTexDesc.rscDesc.res.array.array = d_depthArr2[idx];
+		cudaCreateTextureObject(&d_depthTex2[idx], &depthTexDesc.rscDesc,
+			&depthTexDesc.texDesc, nullptr);
+	}
 
 	dim3 threadPerBlock = { 16, 16 };
 	dim3 blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
-						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y };
-	renderKernel <<< blockPerGrid, threadPerBlock, 0, stream >>> (d_color, d_depth.tex);
+						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+	renderKernel <<< blockPerGrid, threadPerBlock, 0, stream >>> (
+		d_color2[0], d_color2[1], d_depthTex2[0], d_depthTex2[1]);
 
-	cudaMemcpyToArray(d_colorArr, 0, 0,
-		d_color, d_colorSize, cudaMemcpyDeviceToDevice);
+	for (uint8_t idx = 0; idx < 2; ++idx)
+	{
+		cudaMemcpyToArray(d_colorArr2[idx], 0, 0,
+			d_color2[idx], d_colorSize, cudaMemcpyDeviceToDevice);
 
-	d_colorArr = d_depthArr = nullptr;
-	cudaGraphicsUnmapResources(1, &outColorTexRsc, stream);
-	cudaGraphicsUnmapResources(1, &inDepthTexRsc, stream);
+		d_colorArr2[idx] = d_depthArr2[idx] = nullptr;
+		cudaGraphicsUnmapResources(1, &outColorTexRsc2[idx], stream);
+		cudaGraphicsUnmapResources(1, &inDepthTexRsc2[idx], stream);
+	}
 }

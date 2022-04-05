@@ -75,7 +75,10 @@ namespace kouek
 			const CUDAParameter& cudaParam
 		);
 
-		virtual void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h) = 0;
+		virtual void registerGLResource(
+			GLuint outLftColorTex, GLuint outRhtColorTex,
+			GLuint inLftDepthTex, GLuint inRhtDepthTex,
+			uint32_t w, uint32_t h) = 0;
 		virtual void unregisterGLResource() = 0;
 
 		struct CameraParameter

@@ -35,7 +35,6 @@ namespace kouek
 			float nearClip, farClip;
 			glm::mat4 unProjection;
 			glm::mat4 camRotaion;
-			glm::vec3 camPos;
 			glm::vec3 camFwd;
 			CompVolumeRenderer::Subregion subrgn;
 			CompVolumeRenderer::LightParamter lightParam;
@@ -45,7 +44,6 @@ namespace kouek
 		{
 		public:
 			virtual void uploadCompVolumeParam(const CompVolumeParameter& param) = 0;
-			virtual void uploadRenderParam(const RenderParameter& param) = 0;
 			virtual void uploadBlockOffs(const uint32_t* hostMemDat, size_t num) = 0;
 			virtual void uploadCUDATextureObj(const cudaTextureObject_t* hostMemDat, size_t num) = 0;
 			virtual void uploadTransferFunc(const float* hostMemDat) = 0;
@@ -63,7 +61,7 @@ namespace kouek
 		bool subrgnChanged = true;
 		Subregion subrgn;
 		CompVolumeRendererCUDA::CompVolumeParameter compVolumeParam;
-		CompVolumeRendererCUDA::RenderParameter renderParam;
+		std::unique_ptr<CompVolumeRendererCUDA::RenderParameter> renderParam;
 		std::unordered_map<std::array<uint32_t, 3>, vs::AABB, Hash_UInt32Array3> blockToAABBs;
 		std::unordered_set<std::array<uint32_t, 4>, Hash_UInt32Array4> needBlocks, currNeedBlocks;
 		std::unordered_set<std::array<uint32_t, 4>, Hash_UInt32Array4> loadBlocks, unloadBlocks;

@@ -4,13 +4,13 @@
 
 void kouek::CompVolumeRendererImpl::setStep(uint32_t maxStepNum, float step)
 {
-	renderParam.maxStepNum = maxStepNum;
-	renderParam.step = step;
+	renderParam->maxStepNum = maxStepNum;
+	renderParam->step = step;
 }
 
 void kouek::CompVolumeRendererImpl::setSubregion(const Subregion& subrgn)
 {
-	renderParam.subrgn = subrgn;
+	renderParam->subrgn = subrgn;
 	subrgnChanged = true;
 }
 
@@ -25,7 +25,7 @@ void kouek::CompVolumeRendererImpl::setTransferFunc(const vs::TransferFunc& tf)
 
 void kouek::CompVolumeRendererImpl::setLightParam(const LightParamter& lightParam)
 {
-	renderParam.lightParam = lightParam;
+	renderParam->lightParam = lightParam;
 }
 
 void kouek::CompVolumeRendererImpl::setVolume(

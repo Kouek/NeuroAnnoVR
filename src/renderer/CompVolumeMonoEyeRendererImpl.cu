@@ -11,7 +11,7 @@ using namespace kouek::CompVolumeRendererCUDA;
 //   Allocated when needed,
 //   freeed when CompVolumeRendererCUDA::MonoEyeFunc is deconstructed
 __constant__ CompVolumeParameter d_compVolumeParam;
-__constant__ RenderParameter d_renderParam;
+__constant__ MonoEyeRenderParameter d_renderParam;
 
 __constant__ uint32_t d_blockOffsets[MAX_LOD + 1];
 __constant__ cudaTextureObject_t d_textures[MAX_TEX_UNIT_NUM];
@@ -56,10 +56,10 @@ void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadCompVolumeParam(const Com
 		cudaMemcpyToSymbol(d_compVolumeParam, &param, sizeof(CompVolumeParameter)));
 }
 
-void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadRenderParam(const RenderParameter& param)
+void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadRenderParam(const MonoEyeRenderParameter& param)
 {
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_renderParam, &param, sizeof(RenderParameter)));
+		cudaMemcpyToSymbol(d_renderParam, &param, sizeof(MonoEyeRenderParameter)));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadBlockOffs(const uint32_t* hostMemDat, size_t num)

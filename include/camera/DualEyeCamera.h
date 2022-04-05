@@ -1,7 +1,9 @@
 #ifndef KOUEK_DUAL_EYE_CAMERA_H
 #define KOUEK_DUAL_EYE_CAMERA_H
 
-#include <VR/VRContext.h>
+#include <array>
+#include <glm/gtc/matrix_transform.hpp>
+#include <util/VR.h>
 
 namespace kouek
 {
@@ -20,7 +22,7 @@ namespace kouek
 		DualEyeCamera()
 			:DualEyeCamera(
 				glm::vec3{ 0,0,1.f }, glm::vec3{ 0,0,1.f },
-				glm::vec3{ 0,0,1.f }, glm::vec3{ 0,0,0 }) {}
+				glm::vec3{ 1.f,1.f,1.f }, glm::vec3{ 0,0,0 }) {}
 		DualEyeCamera(
 			const glm::vec3& leftEyeToHead, const glm::vec3& rightEyeToHead,
 			const glm::vec3& headPos, const glm::vec3& eyeCenter,
@@ -39,11 +41,13 @@ namespace kouek
 		{
 			return eyePos2[eyeIdx];
 		}
-		inline std::tuple<const glm::vec3&, const glm::vec3&,
+		inline std::tuple<
+			const glm::vec3&, const glm::vec3&, const glm::vec3&,
 			const glm::vec3&, const glm::vec3&>
-			getRFUMidPos() const
+			getRFUP2() const
 		{
-			return { right, forward, up, headPos };
+			return { right, forward, up,
+				eyePos2[vr::Eye_Left], eyePos2[vr::Eye_Right] };
 		}
 		inline void setHeadPos(const glm::vec3& headPos)
 		{

@@ -6,4 +6,4 @@ include/CMakeIn.h
 .vs/
 
 # Output
-./bin/
+/bin/

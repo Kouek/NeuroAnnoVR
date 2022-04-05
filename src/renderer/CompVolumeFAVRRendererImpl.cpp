@@ -12,7 +12,12 @@ kouek::CompVolumeFAVRRendererImpl::CompVolumeFAVRRendererImpl(
 	const CUDAParameter& cudaParam)
 {
 	this->cudaParm = cudaParam;
-	renderParam.texUnitDim = cudaParam.texUnitDim;
+
+	renderParam = std::make_unique<CompVolumeRendererCUDA::FAVRRenderParameter>();
+	FAVRRenderParam =
+		static_cast<CompVolumeRendererCUDA::FAVRRenderParameter*>(renderParam.get());
+	renderParam->texUnitDim = cudaParam.texUnitDim;
+
 	cudaFunc = std::make_unique<CompVolumeRendererCUDA::FAVRFunc>();
 	FAVRFunc = dynamic_cast<CompVolumeRendererCUDA::FAVRFunc*>(cudaFunc.get());
 }
@@ -23,11 +28,13 @@ kouek::CompVolumeFAVRRendererImpl::~CompVolumeFAVRRendererImpl()
 }
 
 void kouek::CompVolumeFAVRRendererImpl::registerGLResource(
-	GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h)
+	GLuint outLftColorTex, GLuint outRhtColorTex,
+	GLuint inLftDepthTex, GLuint inRhtDepthTex,
+	uint32_t w, uint32_t h)
 {
-	renderParam.windowSize = { w,h };
-	FAVRFunc->registerGLResource(outColorTex, inDepthTex,
-		w, h);
+	renderParam->windowSize = { w,h };
+	FAVRFunc->registerGLResource(outLftColorTex, outRhtColorTex,
+		inLftDepthTex, inRhtDepthTex, w, h);
 }
 
 void kouek::CompVolumeFAVRRendererImpl::unregisterGLResource()
@@ -37,7 +44,7 @@ void kouek::CompVolumeFAVRRendererImpl::unregisterGLResource()
 
 void kouek::CompVolumeFAVRRendererImpl::render()
 {
-	cudaFunc->uploadRenderParam(renderParam);
+	FAVRFunc->uploadRenderParam(*FAVRRenderParam);
 
 	// filter blocks
 	if (subrgnChanged)
@@ -48,10 +55,10 @@ void kouek::CompVolumeFAVRRendererImpl::render()
 		// according to Subregion, find blocks needed
 		{
 			vs::OBB subrgnOBB(
-				renderParam.subrgn.center, renderParam.subrgn.rotation[0],
-				renderParam.subrgn.rotation[1], renderParam.subrgn.rotation[2],
-				renderParam.subrgn.halfW, renderParam.subrgn.halfH,
-				renderParam.subrgn.halfD);
+				renderParam->subrgn.center, renderParam->subrgn.rotation[0],
+				renderParam->subrgn.rotation[1], renderParam->subrgn.rotation[2],
+				renderParam->subrgn.halfW, renderParam->subrgn.halfH,
+				renderParam->subrgn.halfD);
 			// AABB filter first
 			vs::AABB subrgnAABB = subrgnOBB.getAABB();
 			for (auto& blockAABB : blockToAABBs)
@@ -128,21 +135,22 @@ void kouek::CompVolumeFAVRRendererImpl::render()
 		mappingTable.data(), sizeof(uint32_t) * mappingTable.size());
 
 	FAVRFunc->render(
-		renderParam.windowSize.x, renderParam.windowSize.y);
+		renderParam->windowSize.x, renderParam->windowSize.y);
 }
 
 void kouek::CompVolumeFAVRRendererImpl::setCamera(const CameraParameter& camParam)
 {
-	renderParam.camPos = camParam.pos2[0];
-	renderParam.camRotaion = camParam.rotation;
-	renderParam.unProjection = camParam.unProjection;
-	renderParam.nearClip = camParam.nearClip;
-	renderParam.farClip = camParam.farClip;
+	FAVRRenderParam->camPos2[0] = camParam.pos2[0];
+	FAVRRenderParam->camPos2[1] = camParam.pos2[1];
+	renderParam->camRotaion = camParam.rotation;
+	renderParam->unProjection = camParam.unProjection;
+	renderParam->nearClip = camParam.nearClip;
+	renderParam->farClip = camParam.farClip;
 
 	// computed val
-	renderParam.camFwd = glm::normalize(-renderParam.camRotaion[2]);
-	renderParam.projection22 = -(renderParam.farClip + renderParam.nearClip) /
-		(renderParam.farClip - renderParam.nearClip);
-	renderParam.projection23 = -2.f * renderParam.farClip * renderParam.nearClip /
-		(renderParam.farClip - renderParam.nearClip);
+	renderParam->camFwd = glm::normalize(-renderParam->camRotaion[2]);
+	renderParam->projection22 = -(renderParam->farClip + renderParam->nearClip) /
+		(renderParam->farClip - renderParam->nearClip);
+	renderParam->projection23 = -2.f * renderParam->farClip * renderParam->nearClip /
+		(renderParam->farClip - renderParam->nearClip);
 }

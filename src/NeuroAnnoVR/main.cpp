@@ -1,14 +1,16 @@
 #include <CMakeIn.h>
-
 #include <renderer/Renderer.h>
 
 #include <QtWidgets/qapplication.h>
-#include <QtWidgets/qopenglwidget.h>
-#include <QtGui/qopenglshaderprogram.h>
+#include <QtGUI/qopenglshaderprogram.h>
+
+#include "VREventHandler.h"
+#include "QtEventHandler.h"
 
 #include <spdlog/spdlog.h>
 
-#include "VREventHandler.h"
+using namespace kouek;
+
 
 #include <util/VolumeCfg.h>
 #include <util/RenderObj.h>
@@ -143,103 +145,76 @@ static std::unique_ptr<WireFrame> createGizmo()
 	return std::make_unique<WireFrame>(verts);
 }
 
-int main(int argc, char** argv)
+struct VolumeRenderType
 {
-	// GL Initialization
-	QApplication app(argc, argv);
-	QOpenGLWidget qtGLWidget;
+	std::array<GLuint, 2> tex2;
+	CompVolumeRenderer::Subregion subrgn;
+	std::shared_ptr<vs::CompVolume> volume;
+	std::unique_ptr<kouek::CompVolumeFAVRRenderer> renderer;
+};
+static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<AppStates> states)
+{
 	{
-		QSurfaceFormat surfaceFmt;
-		surfaceFmt.setDepthBufferSize(24);
-		surfaceFmt.setStencilBufferSize(8);
-		surfaceFmt.setVersion(4, 5);
-		surfaceFmt.setProfile(QSurfaceFormat::CoreProfile);
-		qtGLWidget.setFormat(surfaceFmt);
+		CompVolumeMonoEyeRenderer::CUDAParameter param;
+		SetCUDACtx(0);
+		param.ctx = GetCUDACtx();
+		param.texUnitNum = 1;
+		param.texUnitDim = { 1024,1024,1024 };
+		volumeRender.renderer = CompVolumeFAVRRenderer::create(param);
 	}
-	qtGLWidget.show();
-	assert(qtGLWidget.isValid());
-	qtGLWidget.makeCurrent();
-
-	assert(gladLoadGL() != 0);
-
-	std::shared_ptr<VRContext> vrCtx;
-	std::shared_ptr<StateModel> stateModel;
-	std::unique_ptr<VREventHandler> vrInput;
-	vrCtx = std::make_shared<VRContext>();
-	stateModel = std::make_shared<StateModel>();
 	try
 	{
-		vrInput = std::make_unique<VREventHandler>(
-			std::string(PROJECT_SOURCE_DIR) + "/cfg/NeuroAnnoVRActions.json",
-			vrCtx, stateModel);
-	}
-	catch (std::exception& e)
-	{
-		spdlog::critical("File: {0}, Line: {1}, Error: {2}", __FILE__,
-			__LINE__, e.what());
-		return 1;
-	}
-
-	struct
-	{
-		GLuint tex;
-		CompVolumeRenderer::Subregion subrgn;
-		std::shared_ptr<vs::CompVolume> volume;
-		std::unique_ptr<kouek::CompVolumeFAVRRenderer> renderer;
-	}volumeRender;
-	try
-	{
-		{
-			CompVolumeMonoEyeRenderer::CUDAParameter param;
-			SetCUDACtx(0);
-			param.ctx = GetCUDACtx();
-			param.texUnitNum = 6;
-			param.texUnitDim = { 1024,1024,1024 };
-			volumeRender.renderer = CompVolumeFAVRRenderer::create(param);
-		}
-
 		kouek::VolumeConfig cfg(std::string(kouek::PROJECT_SOURCE_DIR) + "/cfg/VolumeCfg.json");
 		volumeRender.volume =
 			vs::CompVolume::Load(cfg.getResourcePath().c_str());
 		volumeRender.volume->SetSpaceX(cfg.getSpaceX());
 		volumeRender.volume->SetSpaceY(cfg.getSpaceY());
 		volumeRender.volume->SetSpaceZ(cfg.getSpaceZ());
-		//volumeRender.renderer->setVolume(volumeRender.volume);
-
-		{
-			vs::TransferFunc tf;
-			tf.points.emplace_back(0, std::array<double, 4>{0.0, 0.1, 0.6, 0.0});
-			tf.points.emplace_back(25, std::array<double, 4>{0.25, 0.5, 1.0, 0.0});
-			tf.points.emplace_back(30, std::array<double, 4>{0.25, 0.5, 1.0, 0.2});
-			tf.points.emplace_back(40, std::array<double, 4>{0.25, 0.5, 1.0, 0.1});
-			tf.points.emplace_back(64, std::array<double, 4>{0.75, 0.50, 0.25, 0.4});
-			tf.points.emplace_back(224, std::array<double, 4>{0.75, 0.75, 0.25, 0.6});
-			tf.points.emplace_back(255, std::array<double, 4>{1.00, 0.75, 0.75, 0.4});
-			volumeRender.renderer->setTransferFunc(tf);
-		}
-		{
-			CompVolumeRenderer::LightParamter param;
-			param.ka = 0.5f;
-			param.kd = 0.8f;
-			param.ks = 0.5f;
-			param.shininess = 64.f;
-			param.bkgrndColor = { .2f,.3f,.4f,.1f };
-			volumeRender.renderer->setLightParam(param);
-		}
-		volumeRender.subrgn.center = { 3.24f,3.48f,5.21f };
 		volumeRender.renderer->setStep(3000, cfg.getBaseSpace() * 0.3);
+		volumeRender.renderer->setVolume(volumeRender.volume);
 	}
 	catch (std::exception& e)
 	{
 		spdlog::critical("File: {0}, Line: {1}, Error: {2}", __FILE__,
 			__LINE__, e.what());
-		return 1;
+		return;
 	}
-	volumeRender.tex = createPlainTexture(2 * vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1]);
+	{
+		vs::TransferFunc tf;
+		tf.points.emplace_back(0, std::array<double, 4>{0.0, 0.1, 0.6, 0.0});
+		tf.points.emplace_back(25, std::array<double, 4>{0.25, 0.5, 1.0, 0.0});
+		tf.points.emplace_back(30, std::array<double, 4>{0.25, 0.5, 1.0, 0.2});
+		tf.points.emplace_back(40, std::array<double, 4>{0.25, 0.5, 1.0, 0.1});
+		tf.points.emplace_back(64, std::array<double, 4>{0.75, 0.50, 0.25, 0.4});
+		tf.points.emplace_back(224, std::array<double, 4>{0.75, 0.75, 0.25, 0.6});
+		tf.points.emplace_back(255, std::array<double, 4>{1.00, 0.75, 0.75, 0.4});
+		volumeRender.renderer->setTransferFunc(tf);
+	}
+	{
+		CompVolumeRenderer::LightParamter param;
+		param.ka = 0.5f;
+		param.kd = 0.8f;
+		param.ks = 0.5f;
+		param.shininess = 64.f;
+		param.bkgrndColor = { .2f,.3f,.4f,.1f };
+		volumeRender.renderer->setLightParam(param);
+	}
+	volumeRender.subrgn.center = { 3.24f,3.48f,5.21f };
+	volumeRender.subrgn.halfW = volumeRender.subrgn.halfH =
+		volumeRender.subrgn.halfD = .08f;
+	volumeRender.subrgn.rotation = volumeRender.subrgn.fromWorldToSubrgn =
+		glm::identity<glm::mat4>();
+	volumeRender.tex2[0] = createPlainTexture(states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+	volumeRender.tex2[1] = createPlainTexture(states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+}
 
+struct ShaderProgramsType
+{
 	GLint depthShaderMatrixPos, colorShaderMatrixPos, diffuseShaderMatrixPos;
 	QOpenGLShaderProgram depthShader, colorShader, diffuseShader;
-	// depthShader
+};
+static void initShaderPrograms(ShaderProgramsType& shaders)
+{
 	{
 		const char* vertShaderCode =
 			"#version 410 core\n"
@@ -257,15 +232,15 @@ int main(int argc, char** argv)
 			"{\n"
 			"    outputColor = vec4(vec3(gl_FragCoord.z), 1.0);\n"
 			"}\n";
-		depthShader.addShaderFromSourceCode(
+		shaders.depthShader.addShaderFromSourceCode(
 			QOpenGLShader::Vertex, vertShaderCode);
-		depthShader.addShaderFromSourceCode(
+		shaders.depthShader.addShaderFromSourceCode(
 			QOpenGLShader::Fragment, fragShaderCode);
-		depthShader.link();
-		assert(depthShader.isLinked());
+		shaders.depthShader.link();
+		assert(shaders.depthShader.isLinked());
 
-		depthShaderMatrixPos = depthShader.uniformLocation("matrix");
-		assert(depthShaderMatrixPos != -1);
+		shaders.depthShaderMatrixPos = shaders.depthShader.uniformLocation("matrix");
+		assert(shaders.depthShaderMatrixPos != -1);
 	}
 	{
 		const char* vertShaderCode =
@@ -287,15 +262,15 @@ int main(int argc, char** argv)
 			"{\n"
 			"    outputColor = v4Color;\n"
 			"}\n";
-		colorShader.addShaderFromSourceCode(
+		shaders.colorShader.addShaderFromSourceCode(
 			QOpenGLShader::Vertex, vertShaderCode);
-		colorShader.addShaderFromSourceCode(
+		shaders.colorShader.addShaderFromSourceCode(
 			QOpenGLShader::Fragment, fragShaderCode);
-		colorShader.link();
-		assert(colorShader.isLinked());
+		shaders.colorShader.link();
+		assert(shaders.colorShader.isLinked());
 
-		colorShaderMatrixPos = colorShader.uniformLocation("matrix");
-		assert(colorShaderMatrixPos != -1);
+		shaders.colorShaderMatrixPos = shaders.colorShader.uniformLocation("matrix");
+		assert(shaders.colorShaderMatrixPos != -1);
 	}
 	{
 		const char* vertShaderCode =
@@ -319,16 +294,49 @@ int main(int argc, char** argv)
 			"{\n"
 			"	outputColor = texture(diffuse, v2TexCoord);\n"
 			"}\n";
-		diffuseShader.addShaderFromSourceCode(
+		shaders.diffuseShader.addShaderFromSourceCode(
 			QOpenGLShader::Vertex, vertShaderCode);
-		diffuseShader.addShaderFromSourceCode(
+		shaders.diffuseShader.addShaderFromSourceCode(
 			QOpenGLShader::Fragment, fragShaderCode);
-		diffuseShader.link();
-		assert(diffuseShader.isLinked());
+		shaders.diffuseShader.link();
+		assert(shaders.diffuseShader.isLinked());
 
-		diffuseShaderMatrixPos = diffuseShader.uniformLocation("matrix");
-		assert(diffuseShaderMatrixPos != -1);
+		shaders.diffuseShaderMatrixPos = shaders.diffuseShader.uniformLocation("matrix");
+		assert(shaders.diffuseShaderMatrixPos != -1);
 	}
+}
+
+int main(int argc, char** argv)
+{
+	// init Qt and GL Context (by EditorWindow.QOpenGLWidget) ====>
+	QApplication qtApp(argc, argv);
+	EditorWindow editorWindow;
+	editorWindow.showMaximized();
+	editorWindow.getVRView()->makeCurrent();
+	// init States and Event Handler (both VR and Qt) ====>
+	std::shared_ptr<AppStates> states = std::make_shared<AppStates>();
+	std::unique_ptr<EventHandler> vrEvntHndler;
+	try
+	{
+		vrEvntHndler = std::make_unique<VREventHandler>(
+			std::string(PROJECT_SOURCE_DIR) + "/cfg/NeuroAnnoVRActions.json",
+			states);
+	}
+	catch (std::exception& e)
+	{
+		states->canVRRun = false;
+		spdlog::error("File: {0}, Line: {1}, Error: {2}", __FILE__,
+			__LINE__, e.what());
+	}
+	std::unique_ptr<EventHandler> qtEvntHndler;
+	qtEvntHndler = std::make_unique<QtEventHandler>(&editorWindow, states);
+
+	// init Volume and GL Resource ====>
+	VolumeRenderType volumeRender;
+	initVolumeRender(volumeRender, states);
+
+	ShaderProgramsType shaders;
+	initShaderPrograms(shaders);
 
 	struct
 	{
@@ -349,79 +357,140 @@ int main(int argc, char** argv)
 	}depthFramebuffer2[2]{ 0 }, colorFramebuffer2[2]{ 0 }, submitFramebuffer2[2]{ 0 };
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		std::tie(
+			depthFramebuffer2[eyeIdx].FBO,
+			depthFramebuffer2[eyeIdx].colorTex,
+			depthFramebuffer2[eyeIdx].depthRBO) =
+			createFrambuffer(states->HMDRenderSizePerEye[0],
+				states->HMDRenderSizePerEye[1]);
+		std::tie(
 			colorFramebuffer2[eyeIdx].FBO,
 			colorFramebuffer2[eyeIdx].colorTex,
 			colorFramebuffer2[eyeIdx].depthRBO) =
-			createFrambuffer(vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1], true);
+			createFrambuffer(states->HMDRenderSizePerEye[0],
+				states->HMDRenderSizePerEye[1], true);
 		std::tie(
 			submitFramebuffer2[eyeIdx].FBO,
 			submitFramebuffer2[eyeIdx].colorTex,
 			submitFramebuffer2[eyeIdx].depthRBO) =
-			createFrambuffer(vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1]);
+			createFrambuffer(states->HMDRenderSizePerEye[0],
+				states->HMDRenderSizePerEye[1]);
 		});
 
-	/*volumeRender.renderer->registerGLResource(colorFramebuffer.colorTex, depthFramebuffer.depthRBO,
-		vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1]);*/
-
-	std::array<vr::Texture_t, 2> submitTex2 = {
+	volumeRender.renderer->registerGLResource(
+		volumeRender.tex2[vr::Eye_Left], volumeRender.tex2[vr::Eye_Right],
+		depthFramebuffer2[vr::Eye_Left].colorTex, depthFramebuffer2[vr::Eye_Right].colorTex,
+		states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+	editorWindow.getVRView()->setInputFBOs(submitFramebuffer2[vr::Eye_Left].FBO,
+		submitFramebuffer2[vr::Eye_Right].FBO, states->HMDRenderSizePerEye);
+	std::array<vr::Texture_t, 2> submitVRTex2 = {
 		vr::Texture_t{(void*)(uintptr_t)submitFramebuffer2[vr::Eye_Left].colorTex, vr::TextureType_OpenGL, vr::ColorSpace_Gamma},
 		vr::Texture_t{(void*)(uintptr_t)submitFramebuffer2[vr::Eye_Right].colorTex, vr::TextureType_OpenGL, vr::ColorSpace_Gamma}
 	};
 
-	Math::printGLMMat4(vrCtx->HMDToEye2[0], "HMDToEye L");
-	Math::printGLMMat4(vrCtx->HMDToEye2[1], "HMDToEye R");
-	Math::printGLMMat4(vrCtx->projection2[0], "Projection L");
-	Math::printGLMMat4(vrCtx->projection2[1], "Projection R");
-	
-	while (!stateModel->shouldClose)
+	Math::printGLMMat4(states->HMDToEye2[vr::Eye_Left], "HMDToEye L");
+	Math::printGLMMat4(states->HMDToEye2[vr::Eye_Right], "HMDToEye R");
+	Math::printGLMMat4(states->projection2[vr::Eye_Left], "Projection L");
+	Math::printGLMMat4(states->projection2[vr::Eye_Right], "Projection R");
+
+	states->camera.setHeadPos(
+		glm::vec3(volumeRender.subrgn.halfW * 2.f,
+			volumeRender.subrgn.halfW * 2.f,
+			volumeRender.subrgn.halfW * 2.f));
+	std::array<glm::mat4, 2> MVP2;
+	while (states->canRun)
 	{
-		vrCtx->update();
-		vrInput->update();
-
-		if (!vrCtx->HMD->IsInputAvailable()) continue;
-
-		std::array<glm::mat4, 2> MVP2;
+		qtApp.processEvents();
+		editorWindow.getVRView()->makeCurrent();
+		if (states->canVRRun)
+			vrEvntHndler->update();
+		
+		gizmo.transform = glm::scale(glm::identity<glm::mat4>(),
+			glm::vec3(volumeRender.subrgn.halfW * 2.f,
+				volumeRender.subrgn.halfW * 2.f,
+				volumeRender.subrgn.halfW * 2.f));
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			MVP2[eyeIdx] = vrCtx->projection2[eyeIdx]
-				* stateModel->camera.getViewMat(eyeIdx) * gizmo.transform;
+			MVP2[eyeIdx] = states->projection2[eyeIdx]
+				* states->camera.getViewMat(eyeIdx) * gizmo.transform;
 			});
 		static auto identity = glm::identity<glm::mat4>();
-		GL_CHECK;
+		
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_BLEND);
 		glEnable(GL_MULTISAMPLE);
 		glClearColor(1.f, 1.f, 1.f, 1.f); // area without frag corresp to FarClip
-		glClearColor(0.f, 0.f, 0.f, 1.f); // restore
-		colorShader.bind();
+		shaders.depthShader.bind();
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
-			glViewport(0, 0, vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1]);
+			glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer2[eyeIdx].FBO);
+			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glUniformMatrix4fv(
-				colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP2[eyeIdx]);
+				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP2[eyeIdx]);
 			gizmo.model->draw();
 			});
-		GL_CHECK;
+
+		glClearColor(0.f, 0.f, 0.f, 1.f); // restore
+		shaders.colorShader.bind();
+		VRContext::forEyesDo([&](uint8_t eyeIdx) {
+			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glUniformMatrix4fv(
+				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP2[eyeIdx]);
+			gizmo.model->draw();
+			});
+		
+		{
+			auto [right, forward, up, lftEyePos, rhtEyePos] =
+				states->camera.getRFUP2();
+			glm::mat4 rotation(
+				right.x, right.y, right.z, 0,
+				up.x, up.y, up.z, 0,
+				-forward.x, -forward.y, -forward.z, 0,
+				0, 0, 0, 1.f);
+			volumeRender.renderer->setCamera(
+				{ lftEyePos, rhtEyePos, rotation,
+				states->unProjection2[0],
+				states->nearClip, states->farClip });
+		}
+		volumeRender.renderer->setSubregion(volumeRender.subrgn);
+		volumeRender.renderer->render();
+
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_MULTISAMPLE);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		shaders.diffuseShader.bind();
+		glUniformMatrix4fv(
+			shaders.diffuseShaderMatrixPos, 1, GL_FALSE,
+			(GLfloat*)&identity);
+		glBindVertexArray(screenQuad.VAO);
+		VRContext::forEyesDo([&](uint8_t eyeIdx) {
+			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+			{
+				glBindTexture(GL_TEXTURE_2D, volumeRender.tex2[eyeIdx]);
+				glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
+				glBindTexture(GL_TEXTURE_2D, 0);
+			}
+			});
+		glBindVertexArray(0);
+
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
 			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, submitFramebuffer2[eyeIdx].FBO);
 			glBlitFramebuffer(
-				0, 0, vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1],
-				0, 0, vrCtx->HMDRenderSizePerEye[0], vrCtx->HMDRenderSizePerEye[1],
+				0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
+				0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
 				GL_COLOR_BUFFER_BIT, GL_LINEAR);
 			});
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-		GL_CHECK;
-		vr::EVRCompositorError err;
-		err = vr::VRCompositor()->Submit(vr::Eye_Left, &submitTex2[vr::Eye_Left]);
-		assert(err == vr::VRCompositorError_None);
-		err = vr::VRCompositor()->Submit(vr::Eye_Right, &submitTex2[vr::Eye_Right]);
-		assert(err == vr::VRCompositorError_None);
+		
+		editorWindow.getVRView()->update();
+		if (states->canVRRun)
+		{
+			vr::VRCompositor()->Submit(vr::Eye_Left, &submitVRTex2[vr::Eye_Left]);
+			vr::VRCompositor()->Submit(vr::Eye_Right, &submitVRTex2[vr::Eye_Right]);
+		}
 	}
 
+	qtApp.exit();
 	return 0;
 }

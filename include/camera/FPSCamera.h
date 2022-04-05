@@ -17,7 +17,7 @@ namespace kouek
 
 	public:
 		FPSCamera()
-			:FPSCamera(glm::vec3{ 0,0,1.f }, glm::vec3{ 0,0,0 }) {}
+			:FPSCamera(glm::vec3{ 1.f,1.f,1.f }, glm::vec3{ 0,0,0 }) {}
 		FPSCamera(
 			const glm::vec3& eyePos, const glm::vec3& eyeCenter,
 			const glm::vec3& up = glm::vec3{ 0,1.f,0 })

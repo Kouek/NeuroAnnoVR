@@ -12,7 +12,12 @@ kouek::CompVolumeMonoEyeRendererImpl::CompVolumeMonoEyeRendererImpl(
 	const CUDAParameter& cudaParam)
 {
 	this->cudaParm = cudaParam;
-	renderParam.texUnitDim = cudaParam.texUnitDim;
+
+	renderParam = std::make_unique<CompVolumeRendererCUDA::MonoEyeRenderParameter>();
+	monoEyeRenderParam =
+		static_cast<CompVolumeRendererCUDA::MonoEyeRenderParameter*>(renderParam.get());
+	renderParam->texUnitDim = cudaParam.texUnitDim;
+
 	cudaFunc = std::make_unique<CompVolumeRendererCUDA::MonoEyeFunc>();
 	monoEyeFunc = dynamic_cast<CompVolumeRendererCUDA::MonoEyeFunc*>(cudaFunc.get());
 }
@@ -25,7 +30,7 @@ kouek::CompVolumeMonoEyeRendererImpl::~CompVolumeMonoEyeRendererImpl()
 void kouek::CompVolumeMonoEyeRendererImpl::registerGLResource(
 	GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h)
 {
-	renderParam.windowSize = { w,h };
+	renderParam->windowSize = { w,h };
 	monoEyeFunc->registerGLResource(outColorTex, inDepthTex,
 		w, h);
 }
@@ -37,7 +42,7 @@ void kouek::CompVolumeMonoEyeRendererImpl::unregisterGLResource()
 
 void kouek::CompVolumeMonoEyeRendererImpl::render()
 {
-	cudaFunc->uploadRenderParam(renderParam);
+	monoEyeFunc->uploadRenderParam(*monoEyeRenderParam);
 
 	// filter blocks
 	if (subrgnChanged)
@@ -48,10 +53,10 @@ void kouek::CompVolumeMonoEyeRendererImpl::render()
 		// according to Subregion, find blocks needed
 		{
 			vs::OBB subrgnOBB(
-				renderParam.subrgn.center, renderParam.subrgn.rotation[0],
-				renderParam.subrgn.rotation[1], renderParam.subrgn.rotation[2],
-				renderParam.subrgn.halfW, renderParam.subrgn.halfH,
-				renderParam.subrgn.halfD);
+				renderParam->subrgn.center, renderParam->subrgn.rotation[0],
+				renderParam->subrgn.rotation[1], renderParam->subrgn.rotation[2],
+				renderParam->subrgn.halfW, renderParam->subrgn.halfH,
+				renderParam->subrgn.halfD);
 			// AABB filter first
 			vs::AABB subrgnAABB = subrgnOBB.getAABB();
 			for (auto& blockAABB : blockToAABBs)
@@ -128,21 +133,21 @@ void kouek::CompVolumeMonoEyeRendererImpl::render()
 		mappingTable.data(), sizeof(uint32_t) * mappingTable.size());
 
 	monoEyeFunc->render(
-		renderParam.windowSize.x, renderParam.windowSize.y);
+		renderParam->windowSize.x, renderParam->windowSize.y);
 }
 
 void kouek::CompVolumeMonoEyeRendererImpl::setCamera(const CameraParameter& camParam)
 {
-	renderParam.camPos = camParam.pos;
-	renderParam.camRotaion = camParam.rotation;
-	renderParam.unProjection = camParam.unProjection;
-	renderParam.nearClip = camParam.nearClip;
-	renderParam.farClip = camParam.farClip;
+	monoEyeRenderParam->camPos = camParam.pos;
+	renderParam->camRotaion = camParam.rotation;
+	renderParam->unProjection = camParam.unProjection;
+	renderParam->nearClip = camParam.nearClip;
+	renderParam->farClip = camParam.farClip;
 
 	// computed val
-	renderParam.camFwd = glm::normalize(-renderParam.camRotaion[2]);
-	renderParam.projection22 = -(renderParam.farClip + renderParam.nearClip) /
-		(renderParam.farClip - renderParam.nearClip);
-	renderParam.projection23 = -2.f * renderParam.farClip * renderParam.nearClip /
-		(renderParam.farClip - renderParam.nearClip);
+	renderParam->camFwd = glm::normalize(-renderParam->camRotaion[2]);
+	renderParam->projection22 = -(renderParam->farClip + renderParam->nearClip) /
+		(renderParam->farClip - renderParam->nearClip);
+	renderParam->projection23 = -2.f * renderParam->farClip * renderParam->nearClip /
+		(renderParam->farClip - renderParam->nearClip);
 }
