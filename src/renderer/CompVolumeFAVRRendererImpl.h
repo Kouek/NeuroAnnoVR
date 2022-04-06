@@ -7,9 +7,12 @@ namespace kouek
 {
 	namespace CompVolumeRendererCUDA
 	{
+		constexpr uint8_t MAX_SUBSAMPLE_LEVEL_NUM = 6;
+
 		struct FAVRRenderParameter : RenderParameter
 		{
 			glm::vec3 camPos2[2];
+			glm::mat4 unProjection2[2];
 		};
 
 		class FAVRFunc : public Func
@@ -30,7 +33,7 @@ namespace kouek
 				GLuint inLftDepthTex, GLuint inRhtDepthTex,
 				uint32_t w, uint32_t h);
 			void unregisterGLResource();
-			void render(uint32_t windowW, uint32_t windowH);
+			void render(uint32_t windowW, uint32_t windowH, uint8_t sbsmplLvl);
 		};
 	}
 

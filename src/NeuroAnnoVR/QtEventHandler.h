@@ -8,6 +8,10 @@ namespace kouek
 {
 	class QtEventHandler : public EventHandler
 	{
+	private:
+		std::array<float, 3> moveSteps = { 0 };
+		std::array<float, 3> subrgnMoveSteps = { 0 };
+
 	public:
 		QtEventHandler(
 			EditorWindow* sender,
@@ -17,15 +21,42 @@ namespace kouek
 			QObject::connect(sender, &EditorWindow::closed, [&]() {
 				states->canRun = false;
 				});
-			QObject::connect(sender->getVRView(), &VRView::cameraRotated,
-				[&](const glm::mat4& rotation) {
-					Math::printGLMMat4(states->camera.getViewMat(0), "States.Camera");
-					states->camera.setSelfRotation(rotation);
+			QObject::connect(sender->getVRView(), &VRView::keyPressed,
+				[&](int key) {
+					switch (key)
+					{
+					case Qt::Key_Up:
+						moveSteps[2] = +AppStates::moveSensity; break;
+					case Qt::Key_Down:
+						moveSteps[2] = -AppStates::moveSensity; break;
+					case Qt::Key_Right:
+						moveSteps[0] = +AppStates::moveSensity; break;
+					case Qt::Key_Left:
+						moveSteps[0] = -AppStates::moveSensity; break;
+					case Qt::Key_W:
+						subrgnMoveSteps[2] = +AppStates::moveSensity; break;
+					case Qt::Key_S:
+						subrgnMoveSteps[2] = -AppStates::moveSensity; break;
+					case Qt::Key_D:
+						subrgnMoveSteps[0] = +AppStates::moveSensity; break;
+					case Qt::Key_A:
+						subrgnMoveSteps[0] = -AppStates::moveSensity; break;
+					}
 				});
 		}
 		void update() override
 		{
-			// DO NOTHING
+			{
+				states->camera.move(moveSteps[0], moveSteps[1], moveSteps[2]);
+				moveSteps = { 0 };
+			}
+			if (subrgnMoveSteps[0] != 0 || subrgnMoveSteps[1] != 0 || subrgnMoveSteps[2] != 0)
+			{
+				states->subrgn.center += glm::vec3(subrgnMoveSteps[0],
+					subrgnMoveSteps[1], subrgnMoveSteps[2]);
+				subrgnMoveSteps = { 0 };
+				states->subrgnChanged = true;
+			}
 		}
 	};
 }

@@ -40,7 +40,7 @@ namespace kouek
 			float halfW, halfH, halfD;
 		};
 
-		virtual void setStep(uint32_t maxStepNum, float maxStepDist) = 0;
+		virtual void setStep(uint32_t maxStepNum, float step) = 0;
 		virtual void setSubregion(const Subregion& subrgn) = 0;
 		virtual void setTransferFunc(const vs::TransferFunc& tf) = 0;
 		virtual void setLightParam(const LightParamter& lightParam) = 0;
@@ -52,10 +52,11 @@ namespace kouek
 	{
 	public:
 		static std::unique_ptr<CompVolumeMonoEyeRenderer> create(
-			const CUDAParameter& cudaParam
-		);
+			const CUDAParameter& cudaParam);
 
-		virtual void registerGLResource(GLuint outColorTex, GLuint inDepthTex, uint32_t w, uint32_t h) = 0;
+		virtual void registerGLResource(
+			GLuint outColorTex, GLuint inDepthTex,
+			uint32_t w, uint32_t h) = 0;
 		virtual void unregisterGLResource() = 0;
 
 		struct CameraParameter
@@ -72,8 +73,7 @@ namespace kouek
 	{
 	public:
 		static std::unique_ptr<CompVolumeFAVRRenderer> create(
-			const CUDAParameter& cudaParam
-		);
+			const CUDAParameter& cudaParam);
 
 		virtual void registerGLResource(
 			GLuint outLftColorTex, GLuint outRhtColorTex,
@@ -83,9 +83,9 @@ namespace kouek
 
 		struct CameraParameter
 		{
-			const std::array<glm::vec3, 2> pos2;
+			const glm::vec3& lftEyePos, rhtEyePos;
 			const glm::mat4& rotation;
-			const glm::mat4& unProjection;
+			const glm::mat4& lftUnProjection, rhtUnProjection;
 			float nearClip = .01f, farClip = 100.f;
 		};
 		virtual void setCamera(const CameraParameter& camParam) = 0;

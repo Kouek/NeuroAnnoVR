@@ -36,24 +36,5 @@ void kouek::VRView::paintGL()
 
 void kouek::VRView::keyPressEvent(QKeyEvent* e)
 {
-	static auto rotCam = FPSCamera();
-	constexpr float rotSensity = 10.f;
-	Math::printGLMMat4(rotCam.getViewMat(), "RotateCam");
-	switch (e->key())
-	{
-	case Qt::Key_Up:
-		rotCam.rotate(0, +rotSensity); break;
-	case Qt::Key_Down:
-		rotCam.rotate(0, -rotSensity); break;
-	case Qt::Key_Right:
-		rotCam.rotate(+rotSensity, 0); break;
-	case Qt::Key_Left:
-		rotCam.rotate(-rotSensity, 0); break;
-	}
-	glm::mat4 rot;
-	auto [R, F, U, P] = rotCam.getRFUP();
-	rot[0][0] = R.x, rot[0][1] = R.y, rot[0][2] = R.z;
-	rot[1][0] = U.x, rot[1][1] = U.y, rot[1][2] = U.z;
-	rot[2][0] = -F.x, rot[2][1] = -F.y, rot[2][2] = -F.z;
-	emit cameraRotated(rot);
+	emit keyPressed(e->key());
 }

@@ -33,21 +33,29 @@ kouek::VREventHandler::VREventHandler(
 	if (!vr::VRCompositor())
 		throw std::exception("VRCompositor() FAILED");
 
+    // HMD->GetRecommendedRenderTargetSize() is too costly
+    states->HMDRenderSizePerEye[0] = 1080;
+    states->HMDRenderSizePerEye[1] = 1200;
+
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		states->projection2[eyeIdx] = steamVRMat44ToGLMMat4(
 			HMD->GetProjectionMatrix((vr::EVREye)eyeIdx, states->nearClip, states->farClip));
 		states->unProjection2[eyeIdx] = Math::inverseProjective(states->projection2[eyeIdx]);
 
-		states->HMDToEye2[eyeIdx] = steamVRMat34ToGLMMat4(HMD->GetEyeToHeadTransform((vr::EVREye)eyeIdx));
+		states->eyeToHMD2[eyeIdx] = steamVRMat34ToGLMMat4(HMD->GetEyeToHeadTransform((vr::EVREye)eyeIdx));
 		});
 
     {
-        const glm::mat4& headToEye = states->HMDToEye2[vr::Eye_Left];
-        glm::vec3 leftEyeToHead = { -headToEye[3][0],-headToEye[3][1],-headToEye[3][2] };
-    }
-    {
-        const glm::mat4& headToEye = states->HMDToEye2[vr::Eye_Right];
-        glm::vec3 rightEyeToHead = { -headToEye[3][0],-headToEye[3][1],-headToEye[3][2] };
+        glm::vec3 leftEyeToHead, rightEyeToHead;
+        {
+            const glm::mat4& eyeToHead = states->eyeToHMD2[vr::Eye_Left];
+            leftEyeToHead = { eyeToHead[3][0],eyeToHead[3][1],eyeToHead[3][2] };
+        }
+        {
+            const glm::mat4& eyeToHead = states->eyeToHMD2[vr::Eye_Right];
+            rightEyeToHead = { eyeToHead[3][0],eyeToHead[3][1],eyeToHead[3][2] };
+        }
+        states->camera.setEyeToHead(leftEyeToHead, rightEyeToHead);
     }
 
     if (vr::EVRInputError inputError = vr::VRInput()->SetActionManifestPath(actionsCfgPath.data());
@@ -120,13 +128,13 @@ void kouek::VREventHandler::update()
         {
             std::array<float, 3> moveSteps = { 0 };
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadNClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[2] = +moveSensity;
+            if (actionData.bActive && actionData.bState) moveSteps[2] = +AppStates::moveSensity;
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadSClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[2] = -moveSensity;
+            if (actionData.bActive && actionData.bState) moveSteps[2] = -AppStates::moveSensity;
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadWClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[0] = -moveSensity;
+            if (actionData.bActive && actionData.bState) moveSteps[0] = -AppStates::moveSensity;
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadEClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[0] = +moveSensity;
+            if (actionData.bActive && actionData.bState) moveSteps[0] = +AppStates::moveSensity;
             states->camera.move(moveSteps[0], moveSteps[1], moveSteps[2]);
         }
     }

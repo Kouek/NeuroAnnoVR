@@ -42,6 +42,24 @@ void kouek::CompVolumeFAVRRendererImpl::unregisterGLResource()
 	FAVRFunc->unregisterGLResource();
 }
 
+void kouek::CompVolumeFAVRRendererImpl::setCamera(const CameraParameter& camParam)
+{
+	FAVRRenderParam->camPos2[0] = camParam.lftEyePos;
+	FAVRRenderParam->camPos2[1] = camParam.rhtEyePos;
+	FAVRRenderParam->unProjection2[0] = camParam.lftUnProjection;
+	FAVRRenderParam->unProjection2[1] = camParam.rhtUnProjection;
+	renderParam->camRotaion = camParam.rotation;
+	renderParam->nearClip = camParam.nearClip;
+	renderParam->farClip = camParam.farClip;
+
+	// computed val
+	renderParam->camFwd = glm::normalize(-renderParam->camRotaion[2]);
+	renderParam->projection22 = -(renderParam->farClip + renderParam->nearClip) /
+		(renderParam->farClip - renderParam->nearClip);
+	renderParam->projection23 = -2.f * renderParam->farClip * renderParam->nearClip /
+		(renderParam->farClip - renderParam->nearClip);
+}
+
 void kouek::CompVolumeFAVRRendererImpl::render()
 {
 	FAVRFunc->uploadRenderParam(*FAVRRenderParam);
@@ -135,22 +153,5 @@ void kouek::CompVolumeFAVRRendererImpl::render()
 		mappingTable.data(), sizeof(uint32_t) * mappingTable.size());
 
 	FAVRFunc->render(
-		renderParam->windowSize.x, renderParam->windowSize.y);
-}
-
-void kouek::CompVolumeFAVRRendererImpl::setCamera(const CameraParameter& camParam)
-{
-	FAVRRenderParam->camPos2[0] = camParam.pos2[0];
-	FAVRRenderParam->camPos2[1] = camParam.pos2[1];
-	renderParam->camRotaion = camParam.rotation;
-	renderParam->unProjection = camParam.unProjection;
-	renderParam->nearClip = camParam.nearClip;
-	renderParam->farClip = camParam.farClip;
-
-	// computed val
-	renderParam->camFwd = glm::normalize(-renderParam->camRotaion[2]);
-	renderParam->projection22 = -(renderParam->farClip + renderParam->nearClip) /
-		(renderParam->farClip - renderParam->nearClip);
-	renderParam->projection23 = -2.f * renderParam->farClip * renderParam->nearClip /
-		(renderParam->farClip - renderParam->nearClip);
+		renderParam->windowSize.x, renderParam->windowSize.y, 2);
 }

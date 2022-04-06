@@ -25,6 +25,14 @@ __constant__ cudaTextureObject_t d_preIntTransferFunc;
 uint32_t* d_mappingTable = nullptr;
 __constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
 
+cudaArray_t sbsmplSurfArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
+cudaArray_t reconsSurfArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
+cudaSurfaceObject_t sbsmplSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
+cudaSurfaceObject_t reconsSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
+__constant__ float sbsmplRads[MAX_SUBSAMPLE_LEVEL_NUM - 1];
+__constant__ cudaSurfaceObject_t d_sbsmplSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
+__constant__ cudaSurfaceObject_t d_reconsSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
+
 cudaGraphicsResource_t outColorTexRsc2[2] = { nullptr };
 cudaGraphicsResource_t inDepthTexRsc2[2] = { nullptr };
 glm::u8vec4* d_color2[2] = { nullptr };
@@ -154,6 +162,52 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::unregisterGLResource()
 			inDepthTexRsc2[idx] = nullptr;
 		}
 }
+
+__global__ void createSubsampleSurfKernel(
+	cudaSurfaceObject_t d_surf, uint8_t lvl)
+{
+	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
+	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
+	if (windowX > d_renderParam.windowSize.x || windowY > d_renderParam.windowSize.y) return;
+	glm::vec2 XYToCenter = {
+		(((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f,
+		(((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f };
+	for (uint8_t i = 2; i <= lvl; ++i)
+	{
+
+	}
+}
+
+//static void createSubsampleAndReconsSurf(uint8_t lvl, uint32_t w, uint32_t h)
+//{
+//	assert((float)w / lvl >= h);
+//	for (uint8_t i = 2; i <= lvl; ++i)
+//	{
+//		float rad = (float)w / i / 2.f;
+//		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
+//			sbsmplRads[i - 2], &rad, sizeof(float)));
+//	}
+//
+//	uint8_t idx = lvl - 1;
+//	cudaChannelFormatDesc chnnlDesc =
+//		cudaCreateChannelDesc(8, 8, 8, 0, cudaChannelFormatKindUnsigned);
+//	CUDA_RUNTIME_API_CALL(
+//		cudaMallocArray(&sbsmplSurfArrs[idx], &chnnlDesc,
+//			w, h, cudaArraySurfaceLoadStore));
+//	cudaResourceDesc rscDesc;
+//	memset(&rscDesc, 0, sizeof(cudaResourceDesc));
+//	rscDesc.resType = cudaResourceTypeArray;
+//	rscDesc.res.array.array = sbsmplSurfArrs[idx];
+//	CUDA_RUNTIME_API_CALL(cudaCreateSurfaceObject(&sbsmplSurfs[idx], &rscDesc));
+//	CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
+//		d_sbsmplSurfs[idx], &sbsmplSurfs[idx], sizeof(cudaSurfaceObject_t));
+//
+//	dim3 threadPerBlock = { 16, 16 };
+//	dim3 blockPerGrid = { (w + threadPerBlock.x - 1) / threadPerBlock.x,
+//						 (h + threadPerBlock.y - 1) / threadPerBlock.y };
+//	createSubsampleSurfKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+//		sbsmplSurfs[idx], lvl, w, h);
+//}
 
 __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 {
@@ -302,11 +356,12 @@ __global__ void renderKernel(
 
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = d_renderParam.camPos2[blockIdx.z];
+	const glm::mat4 unProjection = d_renderParam.unProjection2[blockIdx.z];
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
 		//   unproject
-		glm::vec4 v41 = d_renderParam.unProjection * glm::vec4{
+		glm::vec4 v41 = unProjection * glm::vec4{
 			(((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f,
 			(((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f,
 			1.f, 1.f };
@@ -326,12 +381,12 @@ __global__ void renderKernel(
 				((depth4.x / 255.f * 2.f - 1.f) + d_renderParam.projection22);
 			if (tFarClip > meshBoundDep)
 				tFarClip = meshBoundDep;
-		}
+		} 
 		tFarClip /= absRayDrcZ;
 		//   rotate
+		v41.x = rayDrc.x, v41.y = rayDrc.y, v41.z = rayDrc.z; // normalized in vec3
 		v41 = d_renderParam.camRotaion * v41;
 		rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
-		rayDrc = glm::normalize(rayDrc);
 
 		// Ray intersect Subregion(OBB)
 		// equivalent to Ray intersect AABB in Subreion Space
@@ -356,40 +411,39 @@ __global__ void renderKernel(
 		if (tExit > tFarClip) tExit = tFarClip;
 	}
 
-#ifdef TEST_RAY_DIRECTION
-	// TEST: Ray Direction
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(rayDrc.x, rayDrc.y, rayDrc.z, 1.f);
-	return;
-#endif // TEST_RAY_DIRECTION
-
 	// no intersection
 	if (tEnter >= tExit)
 		return;
 	glm::vec3 rayPos = camPos + tEnter * rayDrc;
 
-#ifdef TEST_RAY_ENTER_EXIT_DIFF
-	// TEST: Ray Enter Difference
-	float diff = tExit - tEnter;
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(diff, diff, diff, 1.f);
-	return;
-#endif // TEST_RAY_ENTER_EXIT_DIFF
-
 #ifdef TEST_RAY_ENTER_POSITION
 	// TEST: Ray Enter Position
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(
-		.5f * rayPos.x / d_renderParam.subrgn.halfW,
-		.5f * rayPos.y / d_renderParam.subrgn.halfH,
-		.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+	if (blockIdx.z == 0)
+		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(
+			.5f * rayPos.x / d_renderParam.subrgn.halfW,
+			.5f * rayPos.y / d_renderParam.subrgn.halfH,
+			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+	else
+		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(
+			.5f * rayPos.x / d_renderParam.subrgn.halfW,
+			.5f * rayPos.y / d_renderParam.subrgn.halfH,
+			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
 	return;
 #endif // TEST_RAY_ENTER_POSITION
 
 #ifdef TEST_RAY_EXIT_POSITION
 	// TEST: Ray Exit Position
-	rayPos = d_renderParam.camPos + tExit * rayDrc;
-	d_color[windowFlatIdx] = rgbaFloatToUbyte4(
-		.5f * rayPos.x / d_renderParam.subrgn.halfW,
-		.5f * rayPos.y / d_renderParam.subrgn.halfH,
-		.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+	rayPos = camPos + tExit * rayDrc;
+	if (blockIdx.z == 0)
+		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(
+			.5f * rayPos.x / d_renderParam.subrgn.halfW,
+			.5f * rayPos.y / d_renderParam.subrgn.halfH,
+			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+	else
+		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(
+			.5f * rayPos.x / d_renderParam.subrgn.halfW,
+			.5f * rayPos.y / d_renderParam.subrgn.halfH,
+			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
 	return;
 #endif // TEST_RAY_EXIT_POSITION
 
@@ -447,10 +501,15 @@ __global__ void renderKernel(
 		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
 }
 
-void kouek::CompVolumeRendererCUDA::FAVRFunc::render(uint32_t windowW, uint32_t windowH)
+void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
+	uint32_t windowW, uint32_t windowH, uint8_t sbsmplLvl)
 {
 	if (stream == nullptr)
 		CUDA_RUNTIME_CHECK(cudaStreamCreate(&stream));
+
+	assert(sbsmplLvl > 0 && sbsmplLvl <= MAX_SUBSAMPLE_LEVEL_NUM);
+	//if (sbsmplSurfArrs[sbsmplLvl - 1] == nullptr)
+	//	createSubsampleAndReconsSurf(sbsmplLvl, windowW, windowH);
 
 	// from here, called per frame, thus no CUDA_RUNTIME_API_CHECK
 	for (uint8_t idx = 0; idx < 2; ++idx)

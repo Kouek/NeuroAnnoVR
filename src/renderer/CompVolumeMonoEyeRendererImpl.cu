@@ -302,9 +302,9 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 		}
 		tFarClip /= absRayDrcZ;
 		//   rotate
+		v41.x = rayDrc.x, v41.y = rayDrc.y, v41.z = rayDrc.z; // normalized in vec3
 		v41 = d_renderParam.camRotaion * v41;
 		rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
-		rayDrc = glm::normalize(rayDrc);
 
 		// Ray intersect Subregion(OBB)
 		// equivalent to Ray intersect AABB in Subreion Space

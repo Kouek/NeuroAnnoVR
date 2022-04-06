@@ -33,7 +33,7 @@ namespace kouek
 		}
 
 	signals:
-		void cameraRotated(const glm::mat4& rotation);
+		void keyPressed(int key);
 
 	protected:
 		void initializeGL() override;

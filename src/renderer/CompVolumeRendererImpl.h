@@ -33,7 +33,6 @@ namespace kouek
 			float step;
 			float projection22, projection23;
 			float nearClip, farClip;
-			glm::mat4 unProjection;
 			glm::mat4 camRotaion;
 			glm::vec3 camFwd;
 			CompVolumeRenderer::Subregion subrgn;

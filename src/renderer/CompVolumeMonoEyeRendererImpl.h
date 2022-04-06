@@ -10,6 +10,7 @@ namespace kouek
 		struct MonoEyeRenderParameter : RenderParameter
 		{
 			glm::vec3 camPos;
+			glm::mat4 unProjection;
 			__host__ __device__ MonoEyeRenderParameter() {}
 		};
 

@@ -12,8 +12,6 @@ namespace kouek
         int validPoseCnt = 0;
         vr::IVRSystem* HMD;
 
-        float moveSensity = .01f;
-
         vr::VRActionSetHandle_t actionsetFocus = vr::k_ulInvalidActionSetHandle;
 
         vr::VRActionHandle_t actionLeftTriggerClick = vr::k_ulInvalidActionHandle;
