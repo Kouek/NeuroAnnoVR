@@ -18,20 +18,20 @@ __constant__ cudaTextureObject_t d_textures[MAX_TEX_UNIT_NUM];
 
 __constant__ cudaTextureObject_t d_transferFunc;
 
-cudaArray_t preIntTFArray = nullptr;
-cudaTextureObject_t preIntTF;
+cudaArray_t d_preIntTFArray = nullptr;
+cudaTextureObject_t d_preIntTF;
 __constant__ cudaTextureObject_t d_preIntTransferFunc;
 
 uint32_t* d_mappingTable = nullptr;
 __constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
 
-cudaArray_t sbsmplSurfArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
-cudaArray_t reconsSurfArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
-cudaSurfaceObject_t sbsmplSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
-cudaSurfaceObject_t reconsSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
-__constant__ float sbsmplRads[MAX_SUBSAMPLE_LEVEL_NUM - 1];
-__constant__ cudaSurfaceObject_t d_sbsmplSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
-__constant__ cudaSurfaceObject_t d_reconsSurfs[MAX_SUBSAMPLE_LEVEL_NUM];
+cudaArray_t d_sbssmplTexArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
+cudaArray_t d_reconsTexArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
+cudaSurfaceObject_t sbsmplTexes[MAX_SUBSAMPLE_LEVEL_NUM];
+cudaSurfaceObject_t reconsTexes[MAX_SUBSAMPLE_LEVEL_NUM];
+__constant__ float d_sbsmplRadSqrs[MAX_SUBSAMPLE_LEVEL_NUM + 1] = { 0 };
+__constant__ cudaSurfaceObject_t d_sbsmplTexes[MAX_SUBSAMPLE_LEVEL_NUM];
+__constant__ cudaSurfaceObject_t d_reconsTexes[MAX_SUBSAMPLE_LEVEL_NUM];
 
 cudaGraphicsResource_t outColorTexRsc2[2] = { nullptr };
 cudaGraphicsResource_t inDepthTexRsc2[2] = { nullptr };
@@ -48,13 +48,13 @@ cudaStream_t stream = nullptr;
 
 kouek::CompVolumeRendererCUDA::FAVRFunc::~FAVRFunc()
 {
-	if (preIntTFArray != nullptr)
+	if (d_preIntTFArray != nullptr)
 	{
 		CUDA_RUNTIME_CHECK(
-			cudaDestroyTextureObject(preIntTF));
+			cudaDestroyTextureObject(d_preIntTF));
 		CUDA_RUNTIME_CHECK(
-			cudaFreeArray(preIntTFArray));
-		preIntTFArray = nullptr;
+			cudaFreeArray(d_preIntTFArray));
+		d_preIntTFArray = nullptr;
 	}
 	// TODO
 }
@@ -93,12 +93,12 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadTransferFunc(const float* ho
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadPreIntTransferFunc(const float* hostMemDat)
 {
-	if (preIntTFArray == nullptr)
-		CreateCUDATexture2D(256, 256, &preIntTFArray, &preIntTF);
+	if (d_preIntTFArray == nullptr)
+		CreateCUDATexture2D(256, 256, &d_preIntTFArray, &d_preIntTF);
 	UpdateCUDATexture2D(
-		(uint8_t*)hostMemDat, preIntTFArray, sizeof(float) * 256 * 4, 256, 0, 0);
+		(uint8_t*)hostMemDat, d_preIntTFArray, sizeof(float) * 256 * 4, 256, 0, 0);
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_preIntTransferFunc, &preIntTF, sizeof(cudaTextureObject_t)));
+		cudaMemcpyToSymbol(d_preIntTransferFunc, &d_preIntTF, sizeof(cudaTextureObject_t)));
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadMappingTable(const uint32_t* hostMemDat, size_t size)
@@ -164,50 +164,99 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::unregisterGLResource()
 }
 
 __global__ void createSubsampleSurfKernel(
-	cudaSurfaceObject_t d_surf, uint8_t lvl)
+	glm::vec4* d_sbsmpl,
+	uint32_t sbssmplTexW, uint32_t sbssmplTexH)
 {
-	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
-	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
-	if (windowX > d_renderParam.windowSize.x || windowY > d_renderParam.windowSize.y) return;
-	glm::vec2 XYToCenter = {
-		(((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f,
-		(((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f };
-	for (uint8_t i = 2; i <= lvl; ++i)
-	{
+	uint32_t texX = blockIdx.x * blockDim.x + threadIdx.x;
+	uint32_t texY = blockIdx.y * blockDim.y + threadIdx.y;
+	size_t texFlatIdx = texY * sbssmplTexW + texX;
+	if (texX > sbssmplTexW|| texY > sbssmplTexH) return;
 
+	float scale, invLvl = 1.f / d_renderParam.sbsmplLvl;
+	float centerX, centerY, windowCenterX, windowCenterY;
+	centerX = centerY = .5f * sbssmplTexW;
+	windowCenterX = .5f * d_renderParam.windowSize.x;
+	windowCenterY = .5f * d_renderParam.windowSize.y;
+	glm::vec4 X_Y_HasVal__;
+#pragma unroll
+	for (uint8_t stage = 0; stage < d_renderParam.sbsmplLvl;
+		++stage, centerY += sbssmplTexW)
+	{
+		float diffX = (float)texX - centerX, diffY = (float)texY - centerY;
+		float radSqr = diffX * diffX + diffY * diffY;
+		scale = 1.f - (float)stage * invLvl;
+		if (radSqr >= d_sbsmplRadSqrs[stage] && radSqr < d_sbsmplRadSqrs[stage + 1])
+			X_Y_HasVal__.r = X_Y_HasVal__.g = X_Y_HasVal__.b = X_Y_HasVal__.w = 0;
+		else
+		{
+			diffX /= scale, diffY /= scale;
+			diffX += windowCenterX, diffY += windowCenterY;
+			X_Y_HasVal__.r = diffX / d_renderParam.windowSize.x;
+			X_Y_HasVal__.g = diffY / d_renderParam.windowSize.y;
+			X_Y_HasVal__.b = 0;
+			X_Y_HasVal__.w = 1.f;
+		}
+		d_sbsmpl[texFlatIdx] = X_Y_HasVal__;
 	}
 }
 
-//static void createSubsampleAndReconsSurf(uint8_t lvl, uint32_t w, uint32_t h)
-//{
-//	assert((float)w / lvl >= h);
-//	for (uint8_t i = 2; i <= lvl; ++i)
-//	{
-//		float rad = (float)w / i / 2.f;
-//		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
-//			sbsmplRads[i - 2], &rad, sizeof(float)));
-//	}
-//
-//	uint8_t idx = lvl - 1;
-//	cudaChannelFormatDesc chnnlDesc =
-//		cudaCreateChannelDesc(8, 8, 8, 0, cudaChannelFormatKindUnsigned);
-//	CUDA_RUNTIME_API_CALL(
-//		cudaMallocArray(&sbsmplSurfArrs[idx], &chnnlDesc,
-//			w, h, cudaArraySurfaceLoadStore));
-//	cudaResourceDesc rscDesc;
-//	memset(&rscDesc, 0, sizeof(cudaResourceDesc));
-//	rscDesc.resType = cudaResourceTypeArray;
-//	rscDesc.res.array.array = sbsmplSurfArrs[idx];
-//	CUDA_RUNTIME_API_CALL(cudaCreateSurfaceObject(&sbsmplSurfs[idx], &rscDesc));
-//	CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
-//		d_sbsmplSurfs[idx], &sbsmplSurfs[idx], sizeof(cudaSurfaceObject_t));
-//
-//	dim3 threadPerBlock = { 16, 16 };
-//	dim3 blockPerGrid = { (w + threadPerBlock.x - 1) / threadPerBlock.x,
-//						 (h + threadPerBlock.y - 1) / threadPerBlock.y };
-//	createSubsampleSurfKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
-//		sbsmplSurfs[idx], lvl, w, h);
-//}
+static void createSubsampleAndReconsTexes(uint8_t lvl, uint32_t w, uint32_t h)
+{
+	// 0 has been assigned to d_sbsmplRadSqrs[0]
+	for (uint8_t stage = 1; stage < lvl; ++stage)
+	{
+		float radSqr = (float)w / stage / 2.f;
+		radSqr *= radSqr;
+		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
+			d_sbsmplRadSqrs[stage], &radSqr, sizeof(float)));
+	}
+	{
+		float radSqr = INFINITY;
+		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
+			d_sbsmplRadSqrs[lvl], &radSqr, sizeof(float)));
+	}
+	uint8_t idx = lvl - 1;
+	uint32_t sbssmplTexW = w / lvl;
+	uint32_t sbssmplTexH = sbssmplTexW * lvl;
+	{
+		cudaChannelFormatDesc chnnlDesc = cudaCreateChannelDesc<float4>();
+		CUDA_RUNTIME_API_CALL(
+			cudaMallocArray(&d_sbssmplTexArrs[idx], &chnnlDesc,
+				sbssmplTexW, sbssmplTexH, cudaArraySurfaceLoadStore));
+	}
+	{
+		cudaResourceDesc rscDesc;
+		memset(&rscDesc, 0, sizeof(cudaResourceDesc));
+		rscDesc.resType = cudaResourceTypeArray;
+		rscDesc.res.array.array = d_sbssmplTexArrs[idx];
+		cudaTextureDesc texDesc;
+		memset(&depthTexDesc.texDesc, 0, sizeof(cudaTextureDesc));
+		depthTexDesc.texDesc.normalizedCoords = 1;
+		depthTexDesc.texDesc.filterMode = cudaFilterModeLinear;
+		depthTexDesc.texDesc.addressMode[0] = cudaAddressModeClamp;
+		depthTexDesc.texDesc.addressMode[1] = cudaAddressModeClamp;
+		depthTexDesc.texDesc.readMode = cudaReadModeNormalizedFloat;
+		CUDA_RUNTIME_API_CALL(
+			cudaCreateTextureObject(&sbsmplTexes[idx], &rscDesc, &texDesc, nullptr));
+		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
+			d_sbsmplTexes[idx], &sbsmplTexes[idx], sizeof(cudaSurfaceObject_t)));
+	}
+	{
+		glm::vec4* d_sbsmpl = nullptr;
+		size_t d_sbsmplSize = sizeof(glm::vec4) * sbssmplTexW * sbssmplTexH;
+		CUDA_RUNTIME_API_CALL(cudaMalloc(&d_sbsmpl, d_sbsmplSize));
+
+		dim3 threadPerBlock = { 16, 16 };
+		dim3 blockPerGrid = { (sbssmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (sbssmplTexH + threadPerBlock.y - 1) / threadPerBlock.y };
+		createSubsampleSurfKernel << <blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_sbsmpl, sbssmplTexW, sbssmplTexH);
+
+		CUDA_RUNTIME_API_CALL(cudaMemcpyToArray(
+			d_sbssmplTexArrs[idx], 0, 0, d_sbsmpl, d_sbsmplSize, cudaMemcpyDeviceToDevice));
+		CUDA_RUNTIME_API_CALL(cudaFree(d_sbsmpl));
+	}
+}
 
 __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 {
@@ -341,18 +390,23 @@ __global__ void renderKernel(
 	if (windowX >= d_renderParam.windowSize.x || windowY >= d_renderParam.windowSize.y) return;
 	size_t windowFlatIdx = (size_t)windowY * d_renderParam.windowSize.x + windowX;
 
-	if (blockIdx.z == 0) // render Left Eye 
-		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(
-			d_renderParam.lightParam.bkgrndColor.r,
-			d_renderParam.lightParam.bkgrndColor.g,
-			d_renderParam.lightParam.bkgrndColor.b,
-			d_renderParam.lightParam.bkgrndColor.a);
-	else // render Right Eye
-		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(
-			d_renderParam.lightParam.bkgrndColor.r,
-			d_renderParam.lightParam.bkgrndColor.g,
-			d_renderParam.lightParam.bkgrndColor.b,
-			d_renderParam.lightParam.bkgrndColor.a);
+	// render Left or Right Eye
+	glm::u8vec4& d_color = blockIdx.z == 0 ?
+		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
+	d_color = rgbaFloatToUbyte4(
+		d_renderParam.lightParam.bkgrndColor.r,
+		d_renderParam.lightParam.bkgrndColor.g,
+		d_renderParam.lightParam.bkgrndColor.b,
+		d_renderParam.lightParam.bkgrndColor.a);
+#define TEST_SUBSAMPLE_SURFACE
+#ifdef TEST_SUBSAMPLE_SURFACE
+	float normX = (float)windowX / d_renderParam.windowSize.x;
+	float normY = (float)windowY / d_renderParam.windowSize.y;
+	float4 sbsmplVal = tex2D<float4>(d_sbsmplTexes[d_renderParam.sbsmplLvl - 1], normX, normY);
+	d_color = rgbaFloatToUbyte4(sbsmplVal.x, sbsmplVal.y, sbsmplVal.z, 1.f);
+	return;
+#endif // TEST_SUBSAMPLE_SURFACE
+
 
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = d_renderParam.camPos2[blockIdx.z];
@@ -418,32 +472,20 @@ __global__ void renderKernel(
 
 #ifdef TEST_RAY_ENTER_POSITION
 	// TEST: Ray Enter Position
-	if (blockIdx.z == 0)
-		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(
-			.5f * rayPos.x / d_renderParam.subrgn.halfW,
-			.5f * rayPos.y / d_renderParam.subrgn.halfH,
-			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
-	else
-		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(
-			.5f * rayPos.x / d_renderParam.subrgn.halfW,
-			.5f * rayPos.y / d_renderParam.subrgn.halfH,
-			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+	d_color = rgbaFloatToUbyte4(
+		.5f * rayPos.x / d_renderParam.subrgn.halfW,
+		.5f * rayPos.y / d_renderParam.subrgn.halfH,
+		.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
 	return;
 #endif // TEST_RAY_ENTER_POSITION
 
 #ifdef TEST_RAY_EXIT_POSITION
 	// TEST: Ray Exit Position
 	rayPos = camPos + tExit * rayDrc;
-	if (blockIdx.z == 0)
-		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(
-			.5f * rayPos.x / d_renderParam.subrgn.halfW,
-			.5f * rayPos.y / d_renderParam.subrgn.halfH,
-			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
-	else
-		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(
-			.5f * rayPos.x / d_renderParam.subrgn.halfW,
-			.5f * rayPos.y / d_renderParam.subrgn.halfH,
-			.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
+	d_color = rgbaFloatToUbyte4(
+		.5f * rayPos.x / d_renderParam.subrgn.halfW,
+		.5f * rayPos.y / d_renderParam.subrgn.halfH,
+		.5f * rayPos.z / d_renderParam.subrgn.halfD, 1.f);
 	return;
 #endif // TEST_RAY_EXIT_POSITION
 
@@ -495,10 +537,7 @@ __global__ void renderKernel(
 	color.g = powf(color.g, GAMMA_CORRECT_COEF);
 	color.b = powf(color.b, GAMMA_CORRECT_COEF);
 
-	if (blockIdx.z == 0)
-		d_colorL[windowFlatIdx] = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
-	else
-		d_colorR[windowFlatIdx] = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
+	d_color = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
@@ -508,8 +547,8 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 		CUDA_RUNTIME_CHECK(cudaStreamCreate(&stream));
 
 	assert(sbsmplLvl > 0 && sbsmplLvl <= MAX_SUBSAMPLE_LEVEL_NUM);
-	//if (sbsmplSurfArrs[sbsmplLvl - 1] == nullptr)
-	//	createSubsampleAndReconsSurf(sbsmplLvl, windowW, windowH);
+	if (d_sbssmplTexArrs[sbsmplLvl - 1] == nullptr)
+		createSubsampleAndReconsTexes(sbsmplLvl, windowW, windowH);
 
 	// from here, called per frame, thus no CUDA_RUNTIME_API_CHECK
 	for (uint8_t idx = 0; idx < 2; ++idx)
@@ -525,7 +564,7 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 	}
 
 	dim3 threadPerBlock = { 16, 16 };
-	dim3 blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+	dim3 blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x / sbsmplLvl,
 						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 	renderKernel <<< blockPerGrid, threadPerBlock, 0, stream >>> (
 		d_color2[0], d_color2[1], d_depthTex2[0], d_depthTex2[1]);

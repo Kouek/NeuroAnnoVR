@@ -18,8 +18,8 @@ __constant__ cudaTextureObject_t d_textures[MAX_TEX_UNIT_NUM];
 
 __constant__ cudaTextureObject_t d_transferFunc;
 
-cudaArray_t preIntTFArray = nullptr;
-cudaTextureObject_t preIntTF;
+cudaArray_t d_preIntTFArray = nullptr;
+cudaTextureObject_t d_preIntTF;
 __constant__ cudaTextureObject_t d_preIntTransferFunc;
 
 uint32_t* d_mappingTable = nullptr;
@@ -39,13 +39,13 @@ cudaStream_t stream = nullptr;
 
 kouek::CompVolumeRendererCUDA::MonoEyeFunc::~MonoEyeFunc()
 {
-	if (preIntTFArray != nullptr)
+	if (d_preIntTFArray != nullptr)
 	{
 		CUDA_RUNTIME_CHECK(
-			cudaDestroyTextureObject(preIntTF));
+			cudaDestroyTextureObject(d_preIntTF));
 		CUDA_RUNTIME_CHECK(
-			cudaFreeArray(preIntTFArray));
-		preIntTFArray = nullptr;
+			cudaFreeArray(d_preIntTFArray));
+		d_preIntTFArray = nullptr;
 	}
 	// TODO
 }
@@ -83,12 +83,12 @@ void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadTransferFunc(const float*
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadPreIntTransferFunc(const float* hostMemDat)
 {
-	if (preIntTFArray == nullptr)
-		CreateCUDATexture2D(256, 256, &preIntTFArray, &preIntTF);
+	if (d_preIntTFArray == nullptr)
+		CreateCUDATexture2D(256, 256, &d_preIntTFArray, &d_preIntTF);
 	UpdateCUDATexture2D(
-		(uint8_t*)hostMemDat, preIntTFArray, sizeof(float) * 256 * 4, 256, 0, 0);
+		(uint8_t*)hostMemDat, d_preIntTFArray, sizeof(float) * 256 * 4, 256, 0, 0);
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_preIntTransferFunc, &preIntTF, sizeof(cudaTextureObject_t)));
+		cudaMemcpyToSymbol(d_preIntTransferFunc, &d_preIntTF, sizeof(cudaTextureObject_t)));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadMappingTable(const uint32_t* hostMemDat, size_t size)

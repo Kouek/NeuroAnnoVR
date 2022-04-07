@@ -13,6 +13,7 @@ namespace kouek
 		{
 			glm::vec3 camPos2[2];
 			glm::mat4 unProjection2[2];
+			uint8_t sbsmplLvl;
 		};
 
 		class FAVRFunc : public Func
