@@ -46,6 +46,7 @@ namespace kouek
 		}
 		void update() override
 		{
+			if (moveSteps[0] != 0 || moveSteps[1] != 0 || moveSteps[2] != 0)
 			{
 				states->camera.move(moveSteps[0], moveSteps[1], moveSteps[2]);
 				moveSteps = { 0 };

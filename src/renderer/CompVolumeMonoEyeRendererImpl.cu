@@ -10,17 +10,17 @@ using namespace kouek::CompVolumeRendererCUDA;
 // CUDA Resource:
 //   Allocated when needed,
 //   freeed when CompVolumeRendererCUDA::MonoEyeFunc is deconstructed
-__constant__ CompVolumeParameter d_compVolumeParam;
-__constant__ MonoEyeRenderParameter d_renderParam;
+__constant__ CompVolumeParameter dc_compVolumeParam;
+__constant__ MonoEyeRenderParameter dc_renderParam;
 
-__constant__ uint32_t d_blockOffsets[MAX_LOD + 1];
-__constant__ cudaTextureObject_t d_textures[MAX_TEX_UNIT_NUM];
+__constant__ uint32_t dc_blockOffsets[MAX_LOD + 1];
+__constant__ cudaTextureObject_t dc_textures[MAX_TEX_UNIT_NUM];
 
-__constant__ cudaTextureObject_t d_transferFunc;
+__constant__ cudaTextureObject_t dc_transferFunc;
 
 cudaArray_t d_preIntTFArray = nullptr;
 cudaTextureObject_t d_preIntTF;
-__constant__ cudaTextureObject_t d_preIntTransferFunc;
+__constant__ cudaTextureObject_t dc_preIntTransferFunc;
 
 uint32_t* d_mappingTable = nullptr;
 __constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
@@ -53,27 +53,27 @@ kouek::CompVolumeRendererCUDA::MonoEyeFunc::~MonoEyeFunc()
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadCompVolumeParam(const CompVolumeParameter& param)
 {
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_compVolumeParam, &param, sizeof(CompVolumeParameter)));
+		cudaMemcpyToSymbol(dc_compVolumeParam, &param, sizeof(CompVolumeParameter)));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadRenderParam(const MonoEyeRenderParameter& param)
 {
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_renderParam, &param, sizeof(MonoEyeRenderParameter)));
+		cudaMemcpyToSymbol(dc_renderParam, &param, sizeof(MonoEyeRenderParameter)));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadBlockOffs(const uint32_t* hostMemDat, size_t num)
 {
 	assert(num <= MAX_LOD + 1);
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_blockOffsets, hostMemDat, sizeof(uint32_t) * num));
+		cudaMemcpyToSymbol(dc_blockOffsets, hostMemDat, sizeof(uint32_t) * num));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadCUDATextureObj(const cudaTextureObject_t* hostMemDat, size_t num)
 {
 	assert(num <= MAX_TEX_UNIT_NUM);
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_textures, hostMemDat, sizeof(cudaTextureObject_t) * num));
+		cudaMemcpyToSymbol(dc_textures, hostMemDat, sizeof(cudaTextureObject_t) * num));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadTransferFunc(const float* hostMemDat)
@@ -88,7 +88,7 @@ void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadPreIntTransferFunc(const 
 	UpdateCUDATexture2D(
 		(uint8_t*)hostMemDat, d_preIntTFArray, sizeof(float) * 256 * 4, 256, 0, 0);
 	CUDA_RUNTIME_CHECK(
-		cudaMemcpyToSymbol(d_preIntTransferFunc, &d_preIntTF, sizeof(cudaTextureObject_t)));
+		cudaMemcpyToSymbol(dc_preIntTransferFunc, &d_preIntTF, sizeof(cudaTextureObject_t)));
 }
 
 void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadMappingTable(const uint32_t* hostMemDat, size_t size)
@@ -144,14 +144,14 @@ __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 {
 	// sample pos in Voxel Space -> virtual sample Block idx
 	glm::uvec3 vsBlockIdx =
-		samplePos / (float)d_compVolumeParam.noPaddingBlockLength;
+		samplePos / (float)dc_compVolumeParam.noPaddingBlockLength;
 
 	// virtual sample Block idx -> real sample Block idx (in GPU Mem)
 	glm::uvec4 GPUMemBlockIdx;
 	{
-		size_t flatVSBlockIdx = d_blockOffsets[0]
-			+ vsBlockIdx.z * d_compVolumeParam.LOD0BlockDim.y * d_compVolumeParam.LOD0BlockDim.x
-			+ vsBlockIdx.y * d_compVolumeParam.LOD0BlockDim.x
+		size_t flatVSBlockIdx = dc_blockOffsets[0]
+			+ vsBlockIdx.z * dc_compVolumeParam.LOD0BlockDim.y * dc_compVolumeParam.LOD0BlockDim.x
+			+ vsBlockIdx.y * dc_compVolumeParam.LOD0BlockDim.x
 			+ vsBlockIdx.x;
 		GPUMemBlockIdx = d_mappingTableStride4[flatVSBlockIdx];
 	}
@@ -164,15 +164,15 @@ __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 	glm::vec3 GPUMemSamplePos;
 	{
 		glm::vec3 offsetInNoPaddingBlock = samplePos -
-			glm::vec3{ vsBlockIdx * d_compVolumeParam.noPaddingBlockLength };
+			glm::vec3{ vsBlockIdx * dc_compVolumeParam.noPaddingBlockLength };
 		GPUMemSamplePos = glm::vec3{ GPUMemBlockIdx.x, GPUMemBlockIdx.y, GPUMemBlockIdx.z }
-			*(float)d_compVolumeParam.blockLength
-			+ offsetInNoPaddingBlock + (float)d_compVolumeParam.padding;
+			*(float)dc_compVolumeParam.blockLength
+			+ offsetInNoPaddingBlock + (float)dc_compVolumeParam.padding;
 		// normolized
-		GPUMemSamplePos /= d_renderParam.texUnitDim;
+		GPUMemSamplePos /= dc_renderParam.texUnitDim;
 	}
 
-	return tex3D<float>(d_textures[GPUMemBlockIdx.w & (0x0000ffff)],
+	return tex3D<float>(dc_textures[GPUMemBlockIdx.w & (0x0000ffff)],
 		GPUMemSamplePos.x, GPUMemSamplePos.y, GPUMemSamplePos.z);
 }
 
@@ -250,11 +250,11 @@ __device__ glm::vec3 phongShadingLOD0(
 	glm::vec3 R = L;
 	if (glm::dot(N, L) < 0) N = -N;
 
-	glm::vec3 ambient = d_renderParam.lightParam.ka * diffuseColor;
-	glm::vec3 specular = glm::vec3(d_renderParam.lightParam.ks
+	glm::vec3 ambient = dc_renderParam.lightParam.ka * diffuseColor;
+	glm::vec3 specular = glm::vec3(dc_renderParam.lightParam.ks
 		* powf(fmaxf(dot(N, (L + R) / 2.f), 0),
-			d_renderParam.lightParam.shininess));
-	glm::vec3 diffuse = d_renderParam.lightParam.kd
+			dc_renderParam.lightParam.shininess));
+	glm::vec3 diffuse = dc_renderParam.lightParam.kd
 		* fmaxf(dot(N, L), 0.f) * diffuseColor;
 
 	return ambient + specular + diffuse;
@@ -267,63 +267,63 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 {
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
 	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
-	if (windowX >= d_renderParam.windowSize.x || windowY >= d_renderParam.windowSize.y) return;
-	size_t windowFlatIdx = (size_t)windowY * d_renderParam.windowSize.x + windowX;
+	if (windowX >= dc_renderParam.windowSize.x || windowY >= dc_renderParam.windowSize.y) return;
+	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.windowSize.x + windowX;
 
 	d_color[windowFlatIdx] = rgbaFloatToUbyte4(
-		d_renderParam.lightParam.bkgrndColor.r,
-		d_renderParam.lightParam.bkgrndColor.g,
-		d_renderParam.lightParam.bkgrndColor.b,
-		d_renderParam.lightParam.bkgrndColor.a);
+		dc_renderParam.lightParam.bkgrndColor.r,
+		dc_renderParam.lightParam.bkgrndColor.g,
+		dc_renderParam.lightParam.bkgrndColor.b,
+		dc_renderParam.lightParam.bkgrndColor.a);
 
 	glm::vec3 rayDrc;
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
 		//   unproject
-		glm::vec4 v41 = d_renderParam.unProjection * glm::vec4{
-			(((float)windowX / d_renderParam.windowSize.x) - .5f) * 2.f,
-			(((float)windowY / d_renderParam.windowSize.y) - .5f) * 2.f,
+		glm::vec4 v41 = dc_renderParam.unProjection * glm::vec4{
+			(((float)windowX / dc_renderParam.windowSize.x) - .5f) * 2.f,
+			(((float)windowY / dc_renderParam.windowSize.y) - .5f) * 2.f,
 			1.f, 1.f };
 		//   don't rotate first to compute the Near&Far-clip steps
 		rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
 		rayDrc = glm::normalize(rayDrc);
 		float absRayDrcZ = fabsf(rayDrc.z);
-		float tNearClip = d_renderParam.nearClip / absRayDrcZ;
-		float tFarClip = d_renderParam.farClip;
+		float tNearClip = dc_renderParam.nearClip / absRayDrcZ;
+		float tFarClip = dc_renderParam.farClip;
 		//   then compute upper bound of steps
 		//   for Mesh-Volume mixed rendering
 		{
 			uchar4 depth4 = tex2D<uchar4>(d_depthTex, windowX, windowY);
-			float meshBoundDep = d_renderParam.projection23 /
-				((depth4.x / 255.f * 2.f - 1.f) + d_renderParam.projection22);
+			float meshBoundDep = dc_renderParam.projection23 /
+				((depth4.x / 255.f * 2.f - 1.f) + dc_renderParam.projection22);
 			if (tFarClip > meshBoundDep)
 				tFarClip = meshBoundDep;
 		}
 		tFarClip /= absRayDrcZ;
 		//   rotate
 		v41.x = rayDrc.x, v41.y = rayDrc.y, v41.z = rayDrc.z; // normalized in vec3
-		v41 = d_renderParam.camRotaion * v41;
+		v41 = dc_renderParam.camRotaion * v41;
 		rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
 
 		// Ray intersect Subregion(OBB)
 		// equivalent to Ray intersect AABB in Subreion Space
 		//   for pos, apply Rotation and Translation
-		glm::vec4 v42{ d_renderParam.camPos.x, d_renderParam.camPos.y,
-			d_renderParam.camPos.z, 1.f };
-		v42 = d_renderParam.subrgn.fromWorldToSubrgn * v42;
+		glm::vec4 v42{ dc_renderParam.camPos.x, dc_renderParam.camPos.y,
+			dc_renderParam.camPos.z, 1.f };
+		v42 = dc_renderParam.subrgn.fromWorldToSubrgn * v42;
 		//   for drc, apply Rotation only
 		v41.w = 0;
-		v41 = d_renderParam.subrgn.fromWorldToSubrgn * v41;
+		v41 = dc_renderParam.subrgn.fromWorldToSubrgn * v41;
 		rayIntersectAABB(
 			&tEnter, &tExit,
 			glm::vec3(v42),
 			glm::normalize(glm::vec3(v41)),
 			glm::zero<glm::vec3>(),
 			glm::vec3{
-				d_renderParam.subrgn.halfW * 2,
-				d_renderParam.subrgn.halfH * 2,
-				d_renderParam.subrgn.halfD * 2 });
+				dc_renderParam.subrgn.halfW * 2,
+				dc_renderParam.subrgn.halfH * 2,
+				dc_renderParam.subrgn.halfD * 2 });
 
 		// Near&Far-clip
 		if (tEnter < tNearClip) tEnter = tNearClip;
@@ -339,7 +339,7 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 	// no intersection
 	if (tEnter >= tExit)
 		return;
-	glm::vec3 rayPos = d_renderParam.camPos + tEnter * rayDrc;
+	glm::vec3 rayPos = dc_renderParam.camPos + tEnter * rayDrc;
 
 #ifdef TEST_RAY_ENTER_EXIT_DIFF
 	// TEST: Ray Enter Difference
@@ -368,30 +368,30 @@ __global__ void renderKernel(glm::u8vec4* d_color, cudaTextureObject_t d_depthTe
 #endif // TEST_RAY_EXIT_POSITION
 
 	glm::vec3 subrgnCenterInWdSp = {
-		.5f * d_renderParam.subrgn.halfW,
-		.5f * d_renderParam.subrgn.halfH,
-		.5f * d_renderParam.subrgn.halfD,
+		.5f * dc_renderParam.subrgn.halfW,
+		.5f * dc_renderParam.subrgn.halfH,
+		.5f * dc_renderParam.subrgn.halfD,
 	};
-	glm::vec3 rayDrcMulStp = rayDrc * d_renderParam.step;
+	glm::vec3 rayDrcMulStp = rayDrc * dc_renderParam.step;
 	glm::vec3 samplePos;
 	glm::vec4 color = glm::zero<glm::vec4>();
 	float sampleVal = 0;
 	uint32_t stepNum = 0;
 	for (;
-		stepNum <= d_renderParam.maxStepNum && tEnter <= tExit;
-		++stepNum, tEnter += d_renderParam.step, rayPos += rayDrcMulStp)
+		stepNum <= dc_renderParam.maxStepNum && tEnter <= tExit;
+		++stepNum, tEnter += dc_renderParam.step, rayPos += rayDrcMulStp)
 	{
 		// ray pos in World Space -> sample pos in Voxel Space
 		samplePos =
-			(rayPos - subrgnCenterInWdSp + d_renderParam.subrgn.center)
-			/ d_compVolumeParam.spaces;
+			(rayPos - subrgnCenterInWdSp + dc_renderParam.subrgn.center)
+			/ dc_compVolumeParam.spaces;
 
 		// virtual sample in Voxel Space, real sample in GPU Mem
 		float currSampleVal = virtualSampleLOD0(samplePos);
 		if (currSampleVal <= 0)
 			continue;
 
-		float4 currColor = tex2D<float4>(d_preIntTransferFunc, sampleVal, currSampleVal);
+		float4 currColor = tex2D<float4>(dc_preIntTransferFunc, sampleVal, currSampleVal);
 		if (currColor.w <= 0)
 			continue;
 

@@ -62,7 +62,7 @@ void kouek::CompVolumeFAVRRendererImpl::setCamera(const CameraParameter& camPara
 
 void kouek::CompVolumeFAVRRendererImpl::render()
 {
-	FAVRRenderParam->sbsmplLvl = 2;
+	FAVRRenderParam->sbsmplLvl = 3;
 	FAVRFunc->uploadRenderParam(*FAVRRenderParam);
 
 	// filter blocks
@@ -154,5 +154,5 @@ void kouek::CompVolumeFAVRRendererImpl::render()
 		mappingTable.data(), sizeof(uint32_t) * mappingTable.size());
 
 	FAVRFunc->render(
-		renderParam->windowSize.x, renderParam->windowSize.y, 2);
+		renderParam->windowSize.x, renderParam->windowSize.y, FAVRRenderParam->sbsmplLvl);
 }

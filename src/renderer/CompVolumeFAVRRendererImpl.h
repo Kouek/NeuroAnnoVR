@@ -8,6 +8,7 @@ namespace kouek
 	namespace CompVolumeRendererCUDA
 	{
 		constexpr uint8_t MAX_SUBSAMPLE_LEVEL_NUM = 6;
+		constexpr float INTER_STAGE_OVERLAP_WIDTH_SQR = 1.f;
 
 		struct FAVRRenderParameter : RenderParameter
 		{
