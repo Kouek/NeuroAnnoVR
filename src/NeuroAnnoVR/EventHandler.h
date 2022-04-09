@@ -11,6 +11,14 @@
 
 namespace kouek
 {
+	struct Hand
+	{
+		bool show = false;
+		glm::mat4 transform;
+		std::unique_ptr<VRRenderModel> model;
+		std::string modelName;
+	};
+
 	struct AppStates
 	{
 		static inline float moveSensity = .1f;
@@ -18,14 +26,16 @@ namespace kouek
 
 		bool canRun = true, canVRRun = true;
 		bool subrgnChanged = true;
-		DualEyeCamera camera;
-		CompVolumeRenderer::Subregion subrgn;
-		std::array<uint32_t, 2> HMDRenderSizePerEye = { 800,600 };
+		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
+		std::array<uint32_t, 2> HMDRenderSizePerEye = { 1080,1080 };
 		std::array<glm::mat4, vr::k_unMaxTrackedDeviceCount> devicePoses;
 		float nearClip = 0.01f, farClip = 10.f;
 		std::array<glm::mat4, 2> projection2;
 		std::array<glm::mat4, 2> unProjection2;
 		std::array<glm::mat4, 2> eyeToHMD2;
+		DualEyeCamera camera;
+		CompVolumeRenderer::Subregion subrgn;
+		Hand hand2[2];
 
 		AppStates()
 		{

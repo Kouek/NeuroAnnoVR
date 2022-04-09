@@ -60,9 +60,18 @@ void kouek::CompVolumeFAVRRendererImpl::setCamera(const CameraParameter& camPara
 		(renderParam->farClip - renderParam->nearClip);
 }
 
-void kouek::CompVolumeFAVRRendererImpl::render()
+void kouek::CompVolumeFAVRRendererImpl::setInteractionParam(
+	const InteractionParameter intrctParam)
 {
-	FAVRRenderParam->sbsmplLvl = 3;
+	FAVRRenderParam->intrctParam = intrctParam;
+}
+
+void kouek::CompVolumeFAVRRendererImpl::render(
+	glm::vec3* intrctPos, RenderTarget renderTar)
+{
+	FAVRRenderParam->sbsmplLvl = 4;
+	FAVRRenderParam->sbsmplSize.x = renderParam->windowSize.x / FAVRRenderParam->sbsmplLvl;
+	FAVRRenderParam->sbsmplSize.y = FAVRRenderParam->sbsmplSize.x * FAVRRenderParam->sbsmplLvl;
 	FAVRFunc->uploadRenderParam(*FAVRRenderParam);
 
 	// filter blocks
@@ -154,5 +163,8 @@ void kouek::CompVolumeFAVRRendererImpl::render()
 		mappingTable.data(), sizeof(uint32_t) * mappingTable.size());
 
 	FAVRFunc->render(
-		renderParam->windowSize.x, renderParam->windowSize.y, FAVRRenderParam->sbsmplLvl);
+		intrctPos,
+		renderParam->windowSize.x, renderParam->windowSize.y,
+		FAVRRenderParam->sbsmplSize.x, FAVRRenderParam->sbsmplSize.y,
+		FAVRRenderParam->sbsmplLvl, renderTar);
 }

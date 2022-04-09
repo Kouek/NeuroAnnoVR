@@ -81,6 +81,15 @@ namespace kouek
 			uint32_t w, uint32_t h) = 0;
 		virtual void unregisterGLResource() = 0;
 
+		enum class RenderTarget : uint8_t
+		{
+			Image = 0,
+			SubsampleTex,
+			SubsampleResult,
+			ReconstructionTex,
+			ReconstructionResult,
+			Last
+		};
 		struct CameraParameter
 		{
 			const glm::vec3& lftEyePos, rhtEyePos;
@@ -88,7 +97,27 @@ namespace kouek
 			const glm::mat4& lftUnProjection, rhtUnProjection;
 			float nearClip = .01f, farClip = 100.f;
 		};
+		enum class InteractionMode : uint8_t
+		{
+			AnnotationBall = 0,
+			AnnotationRay
+		};
 		virtual void setCamera(const CameraParameter& camParam) = 0;
+		struct InteractionParameter
+		{
+			InteractionMode mode;
+			union
+			{
+				struct
+				{
+					glm::vec3 AABBSize;
+					glm::vec3 startPos;
+				}ball;
+			}dat;
+		};
+		virtual void setInteractionParam(const InteractionParameter intrctParam) = 0;
+		virtual void render() = 0;
+		virtual void render(glm::vec3* intrctPos, RenderTarget renderTar) = 0;
 	};
 }
 

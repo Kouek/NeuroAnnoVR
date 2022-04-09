@@ -8,13 +8,16 @@ namespace kouek
 	namespace CompVolumeRendererCUDA
 	{
 		constexpr uint8_t MAX_SUBSAMPLE_LEVEL_NUM = 6;
-		constexpr float INTER_STAGE_OVERLAP_WIDTH_SQR = 1.f;
+		constexpr uint8_t INTER_STAGE_OVERLAP_WIDTH = 10;
+		constexpr uint32_t INTERACTION_SAMPLE_DIM = 100;
 
 		struct FAVRRenderParameter : RenderParameter
 		{
 			glm::vec3 camPos2[2];
 			glm::mat4 unProjection2[2];
+			glm::uvec2 sbsmplSize;
 			uint8_t sbsmplLvl;
+			CompVolumeFAVRRenderer::InteractionParameter intrctParam;
 		};
 
 		class FAVRFunc : public Func
@@ -35,7 +38,11 @@ namespace kouek
 				GLuint inLftDepthTex, GLuint inRhtDepthTex,
 				uint32_t w, uint32_t h);
 			void unregisterGLResource();
-			void render(uint32_t windowW, uint32_t windowH, uint8_t sbsmplLvl);
+			void render(
+				glm::vec3* intrctPos,
+				uint32_t windowW, uint32_t windowH,
+				uint32_t sbsmplTexW, uint32_t sbsmplTexH,
+				uint8_t sbsmplLvl, CompVolumeFAVRRenderer::RenderTarget renderTar);
 		};
 	}
 
@@ -59,7 +66,12 @@ namespace kouek
 		void unregisterGLResource() override;
 
 		void setCamera(const CameraParameter& camParam) override;
-		void render() override;
+		void setInteractionParam(const InteractionParameter intrctParam) override;
+		void render() override
+		{
+			render(nullptr, static_cast<RenderTarget>(0));
+		}
+		void render(glm::vec3* intrctPos, RenderTarget renderTar) override;
 	};
 }
 

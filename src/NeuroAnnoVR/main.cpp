@@ -86,6 +86,28 @@ static std::tuple<GLuint, GLuint, GLuint> createFrambuffer(uint32_t w, uint32_t 
 	return { FBO,colorTex,depthRBO };
 }
 
+static std::tuple<GLuint, GLuint> createPoint()
+{
+	GLuint VAO, VBO;
+	glGenVertexArrays(1, &VAO);
+	glBindVertexArray(VAO);
+	glGenBuffers(1, &VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	{
+		GLfloat verts[] = { 0.f, 0.f, 0.f,	1.f, .5f, 1.f };
+		glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, (const void*)(0));
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat) * 6, (const void*)(sizeof(GLfloat) * 3));
+	}
+	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	return { VAO,VBO };
+}
+
 static std::tuple<GLuint, GLuint, GLuint> createScreenQuad()
 {
 	GLuint VAO, VBO, EBO;
@@ -145,8 +167,29 @@ static std::unique_ptr<WireFrame> createGizmo()
 	return std::make_unique<WireFrame>(verts);
 }
 
+static std::unique_ptr<WireFrame> createAnnotationBall()
+{
+	std::vector<GLfloat> verts = {
+		// cube
+		-0.5f,-0.5f,-0.5f, +1.0f,+1.0f,+1.0f, +0.5f,-0.5f,-0.5f, +1.0f,+1.0f,+1.0f,
+		-0.5f,-0.5f,-0.5f, +1.0f,+1.0f,+1.0f, -0.5f,+0.5f,-0.5f, +1.0f,+1.0f,+1.0f,
+		-0.5f,-0.5f,-0.5f, +1.0f,+1.0f,+1.0f, -0.5f,-0.5f,+0.5f, +1.0f,+1.0f,+1.0f,
+		-0.5f,+0.5f,+0.5f, +1.0f,+1.0f,+1.0f, -0.5f,+0.5f,-0.5f, +1.0f,+1.0f,+1.0f,
+		-0.5f,+0.5f,+0.5f, +1.0f,+1.0f,+1.0f, -0.5f,-0.5f,+0.5f, +1.0f,+1.0f,+1.0f,
+		-0.5f,+0.5f,+0.5f, +1.0f,+1.0f,+1.0f, +0.5f,+0.5f,+0.5f, +1.0f,+1.0f,+1.0f,
+		+0.5f,-0.5f,+0.5f, +1.0f,+1.0f,+1.0f, +0.5f,-0.5f,-0.5f, +1.0f,+1.0f,+1.0f,
+		+0.5f,-0.5f,+0.5f, +1.0f,+1.0f,+1.0f, +0.5f,+0.5f,+0.5f, +1.0f,+1.0f,+1.0f,
+		+0.5f,-0.5f,+0.5f, +1.0f,+1.0f,+1.0f, -0.5f,-0.5f,+0.5f, +1.0f,+1.0f,+1.0f,
+		+0.5f,+0.5f,-0.5f, +1.0f,+1.0f,+1.0f, +0.5f,+0.5f,+0.5f, +1.0f,+1.0f,+1.0f,
+		+0.5f,+0.5f,-0.5f, +1.0f,+1.0f,+1.0f, +0.5f,-0.5f,-0.5f, +1.0f,+1.0f,+1.0f,
+		+0.5f,+0.5f,-0.5f, +1.0f,+1.0f,+1.0f, -0.5f,+0.5f,-0.5f, +1.0f,+1.0f,+1.0f
+	};
+	return std::make_unique<WireFrame>(verts);
+}
+
 struct VolumeRenderType
 {
+	uint32_t noPadBlkLen;
 	std::array<GLuint, 2> tex2;
 	std::shared_ptr<vs::CompVolume> volume;
 	std::unique_ptr<kouek::CompVolumeFAVRRenderer> renderer;
@@ -204,11 +247,11 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 	}
 	{
 		const auto& blkLenInfo = volumeRender.volume->GetBlockLength();
-		auto noPadBlkLen = blkLenInfo[0] - blkLenInfo[1] * 2;
+		volumeRender.noPadBlkLen = blkLenInfo[0] - blkLenInfo[1] * 2;
 		states->subrgn.center = { 44.4351540f, 73.9647980f, 62.69787188f };
-		states->subrgn.halfW = noPadBlkLen / 4 * volumeRender.volume->GetVolumeSpaceX();
-		states->subrgn.halfH = noPadBlkLen / 4 * volumeRender.volume->GetVolumeSpaceY();
-		states->subrgn.halfD = noPadBlkLen / 16 * volumeRender.volume->GetVolumeSpaceZ();
+		states->subrgn.halfW = volumeRender.noPadBlkLen / 4 * volumeRender.volume->GetVolumeSpaceX();
+		states->subrgn.halfH = volumeRender.noPadBlkLen / 4 * volumeRender.volume->GetVolumeSpaceY();
+		states->subrgn.halfD = volumeRender.noPadBlkLen / 16 * volumeRender.volume->GetVolumeSpaceZ();
 		states->subrgn.rotation = states->subrgn.fromWorldToSubrgn =
 			glm::identity<glm::mat4>();
 	}
@@ -218,8 +261,10 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 
 struct ShaderProgramsType
 {
-	GLint depthShaderMatrixPos, colorShaderMatrixPos, diffuseShaderMatrixPos;
-	QOpenGLShaderProgram depthShader, colorShader, diffuseShader;
+	GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
+	GLint depthShaderMatrixPos, zeroDepthShaderMatrixPos;
+	QOpenGLShaderProgram colorShader, diffuseShader;
+	QOpenGLShaderProgram depthShader, zeroDepthShader;
 };
 static void initShaderPrograms(ShaderProgramsType& shaders)
 {
@@ -249,6 +294,33 @@ static void initShaderPrograms(ShaderProgramsType& shaders)
 
 		shaders.depthShaderMatrixPos = shaders.depthShader.uniformLocation("matrix");
 		assert(shaders.depthShaderMatrixPos != -1);
+	}
+	{
+		const char* vertShaderCode =
+			"#version 410 core\n"
+			"uniform mat4 matrix;\n"
+			"layout(location = 0) in vec3 position;\n"
+			"layout(location = 1) in vec3 v3ColorIn;\n"
+			"void main()\n"
+			"{\n"
+			"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
+			"}\n";
+		const char* fragShaderCode =
+			"#version 410 core\n"
+			"out vec4 outputColor;\n"
+			"void main()\n"
+			"{\n"
+			"    outputColor = vec4(0, 1.0);\n"
+			"}\n";
+		shaders.zeroDepthShader.addShaderFromSourceCode(
+			QOpenGLShader::Vertex, vertShaderCode);
+		shaders.zeroDepthShader.addShaderFromSourceCode(
+			QOpenGLShader::Fragment, fragShaderCode);
+		shaders.zeroDepthShader.link();
+		assert(shaders.zeroDepthShader.isLinked());
+
+		shaders.zeroDepthShaderMatrixPos = shaders.depthShader.uniformLocation("matrix");
+		assert(shaders.zeroDepthShaderMatrixPos != -1);
 	}
 	{
 		const char* vertShaderCode =
@@ -353,6 +425,27 @@ int main(int argc, char** argv)
 	}gizmo;
 	gizmo.model = createGizmo();
 
+	constexpr float ANNO_BALL_RADIUS = .02f;
+	constexpr float ANNO_BALL_DIAMETER = 2 * ANNO_BALL_RADIUS;
+	constexpr float ANNO_BALL_DIST_FROM_HAND = ANNO_BALL_DIAMETER * 2;
+	struct
+	{
+		glm::mat4 initTr = glm::scale(glm::identity<glm::mat4>(), glm::vec3{ ANNO_BALL_DIAMETER });
+		glm::mat4 transform;
+		std::unique_ptr<WireFrame> model;
+	}annotationBall;
+	annotationBall.model = createAnnotationBall();
+	CompVolumeFAVRRenderer::InteractionParameter intrctParam;
+	intrctParam.mode = CompVolumeFAVRRenderer::InteractionMode::AnnotationBall;
+	intrctParam.dat.ball.AABBSize = glm::vec3{ ANNO_BALL_DIAMETER };
+
+	struct
+	{
+		GLuint VAO, VBO;
+		glm::vec3 pos;
+	}intrctPoint;
+	std::tie(intrctPoint.VAO, intrctPoint.VBO) = createPoint();
+
 	struct
 	{
 		GLuint VAO, VBO, EBO;
@@ -428,7 +521,10 @@ int main(int argc, char** argv)
 			Math::inversePose(TRInvT);
 	}
 
-	std::array<glm::mat4, 2> MVP2;
+	std::array<glm::mat4, 2> VP2;
+	std::array<glm::mat4, 2> gizmoMVP2;
+	std::array<glm::mat4, 2> annotationMVP2;
+	std::array<std::array<glm::mat4, 2>, 2> handMVP22;
 	while (states->canRun)
 	{
 		qtApp.processEvents();
@@ -438,35 +534,99 @@ int main(int argc, char** argv)
 		if (states->canVRRun)
 			vrEvntHndler->update();
 		
-		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			MVP2[eyeIdx] = states->projection2[eyeIdx]
-				* states->camera.getViewMat(eyeIdx) * gizmo.transform;
-			});
 		static auto identity = glm::identity<glm::mat4>();
+		{
+			auto& handZ = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[2];
+			auto& handPos = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[3];
+			glm::vec3 ballPos = handPos - ANNO_BALL_DIST_FROM_HAND * handZ;
+			intrctParam.dat.ball.startPos.x = ballPos.x - ANNO_BALL_RADIUS;
+			intrctParam.dat.ball.startPos.y = ballPos.y - ANNO_BALL_RADIUS;
+			intrctParam.dat.ball.startPos.z = ballPos.z - ANNO_BALL_RADIUS;
+			annotationBall.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
+			annotationBall.transform = glm::scale(annotationBall.transform, glm::vec3{ ANNO_BALL_DIAMETER });
+		}
+		VRContext::forEyesDo([&](uint8_t eyeIdx) {
+			VP2[eyeIdx] = states->projection2[eyeIdx]
+				* states->camera.getViewMat(eyeIdx);
+			gizmoMVP2[eyeIdx] = VP2[eyeIdx] * gizmo.transform;
+			annotationMVP2[eyeIdx] = VP2[eyeIdx] * annotationBall.transform;
+			VRContext::forHandsDo([&](uint8_t hndIdx) {
+				handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
+					* states->hand2[hndIdx].transform;
+				});
+			});
 		
 		glEnable(GL_DEPTH_TEST);
 		glDisable(GL_BLEND);
 		glClearColor(1.f, 1.f, 1.f, 1.f); // area without frag corresp to FarClip
-		shaders.depthShader.bind();
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
 			glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer2[eyeIdx].FBO);
 			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			shaders.depthShader.bind();
 			glUniformMatrix4fv(
-				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP2[eyeIdx]);
+				shaders.depthShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
 			gizmo.model->draw();
+
+			if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+			{
+				glUniformMatrix4fv(
+					shaders.depthShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&annotationMVP2[eyeIdx]);
+				annotationBall.model->draw();
+			}
+
+			VRContext::forHandsDo([&](uint8_t hndIdx) {
+				if (!states->hand2[hndIdx].show) return;
+				glUniformMatrix4fv(
+					shaders.depthShaderMatrixPos, 1, GL_FALSE,
+					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
+				states->hand2[hndIdx].model->draw();
+				});
+
+			shaders.zeroDepthShader.bind();
+			glUniformMatrix4fv(
+				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+			glPointSize(5.f);
+			glBindVertexArray(intrctPoint.VAO);
+			glDrawArrays(GL_POINTS, 0, 1);
+			glBindVertexArray(0);
 			});
 
 		glEnable(GL_MULTISAMPLE);
 		glClearColor(0.f, 0.f, 0.f, 1.f); // restore
-		shaders.colorShader.bind();
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
 			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
 			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			shaders.colorShader.bind();
 			glUniformMatrix4fv(
-				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&MVP2[eyeIdx]);
+				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
 			gizmo.model->draw();
+
+			if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+			{
+				glUniformMatrix4fv(
+					shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&annotationMVP2[eyeIdx]);
+				annotationBall.model->draw();
+			}
+
+			glUniformMatrix4fv(
+				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+			glPointSize(5.f);
+			glBindVertexArray(intrctPoint.VAO);
+			glDrawArrays(GL_POINTS, 0, 1);
+			glBindVertexArray(0);
+
+			VRContext::forHandsDo([&](uint8_t hndIdx) {
+				if (!states->hand2[hndIdx].show) return;
+				shaders.diffuseShader.bind();
+				glUniformMatrix4fv(
+					shaders.diffuseShaderMatrixPos, 1, GL_FALSE,
+					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
+				states->hand2[hndIdx].model->draw();
+				});
 			});
 		
 		{
@@ -487,15 +647,17 @@ int main(int argc, char** argv)
 			volumeRender.renderer->setSubregion(states->subrgn);
 			states->subrgnChanged = false;
 		}
-		volumeRender.renderer->render();
+		volumeRender.renderer->setInteractionParam(intrctParam);
+		volumeRender.renderer->render(&intrctPoint.pos, states->renderTar);
+		glBindBuffer(GL_ARRAY_BUFFER, intrctPoint.VBO);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * 3, &intrctPoint.pos);
 
 		glDisable(GL_DEPTH_TEST);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		shaders.diffuseShader.bind();
 		glUniformMatrix4fv(
-			shaders.diffuseShaderMatrixPos, 1, GL_FALSE,
-			(GLfloat*)&identity);
+			shaders.diffuseShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&identity);
 		glBindVertexArray(screenQuad.VAO);
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
 			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);

@@ -37,6 +37,10 @@ namespace kouek
 		{
 			return view[eyeIdx];
 		}
+		inline const glm::vec3& getHeadPos() const
+		{
+			return headPos;
+		}
 		inline const glm::vec3& getPos(uint8_t eyeIdx) const
 		{
 			return eyePos2[eyeIdx];

@@ -20,6 +20,57 @@ static inline glm::mat4 steamVRMat44ToGLMMat4(const vr::HmdMatrix44_t& stMat44)
 	};
 }
 
+static std::string getTrackedDeviceString(vr::TrackedDeviceIndex_t unDevice, vr::TrackedDeviceProperty prop,
+    vr::TrackedPropertyError* peError = NULL)
+{
+    uint32_t unRequiredBufferLen = vr::VRSystem()->GetStringTrackedDeviceProperty(unDevice, prop, NULL, 0, peError);
+    if (unRequiredBufferLen == 0) return "";
+
+    char* pchBuffer = new char[unRequiredBufferLen];
+    unRequiredBufferLen =
+        vr::VRSystem()->GetStringTrackedDeviceProperty(unDevice, prop, pchBuffer, unRequiredBufferLen, peError);
+    std::string sResult = pchBuffer;
+    delete[] pchBuffer;
+    return sResult;
+}
+
+static std::tuple<vr::RenderModel_t*, vr::RenderModel_TextureMap_t*> getRenderModelAndTex(
+    const char* modelName)
+{
+    vr::RenderModel_t* model = nullptr;
+    vr::EVRRenderModelError error;
+    while (true)
+    {
+        error = vr::VRRenderModels()->LoadRenderModel_Async(modelName, &model);
+        if (error != vr::VRRenderModelError_Loading) break;
+        // block until loading model finished
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (error != vr::VRRenderModelError_None)
+    {
+        spdlog::error("{0} - Load render model FAILED: Model Name:{1}, {2}", __FUNCTION__, modelName,
+            vr::VRRenderModels()->GetRenderModelErrorNameFromEnum(error));
+        return { nullptr,nullptr };
+    }
+
+    vr::RenderModel_TextureMap_t* tex;
+    while (1)
+    {
+        error = vr::VRRenderModels()->LoadTexture_Async(model->diffuseTextureId, &tex);
+        if (error != vr::VRRenderModelError_Loading) break;
+        // block until loading texture finished
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (error != vr::VRRenderModelError_None)
+    {
+        spdlog::error("{0} - Load render model's texture FAILED: Model Name:{1}, Texture ID: {2}, {3}", __FUNCTION__,
+            modelName, model->diffuseTextureId,
+            vr::VRRenderModels()->GetRenderModelErrorNameFromEnum(error));
+        return { nullptr,nullptr };
+    }
+    return { model,tex };
+}
+
 kouek::VREventHandler::VREventHandler(
     std::string_view actionsCfgPath,
     std::shared_ptr<AppStates> sharedStates)
@@ -35,7 +86,7 @@ kouek::VREventHandler::VREventHandler(
 
     // HMD->GetRecommendedRenderTargetSize() is too costly
     states->HMDRenderSizePerEye[0] = 1080;
-    states->HMDRenderSizePerEye[1] = 1200;
+    states->HMDRenderSizePerEye[1] = 1080;
 
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		states->projection2[eyeIdx] = steamVRMat44ToGLMMat4(
@@ -115,6 +166,47 @@ void kouek::VREventHandler::update()
         }
     }
     states->camera.setSelfRotation(states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd]);
+    auto& HMDPose = states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
+
+    // hanlde hand pose changed
+    VRContext::forHandsDo([&](uint8_t hndIdx) {
+        vr::InputPoseActionData_t poseData;
+        if (vr::VRInput()->GetPoseActionDataForNextFrame(
+            actionHandPoses[hndIdx], vr::TrackingUniverseStanding,
+            &poseData, sizeof(poseData), vr::k_ulInvalidInputValueHandle)
+            != vr::VRInputError_None
+            || !poseData.bActive || !poseData.pose.bPoseIsValid)
+            states->hand2[hndIdx].show = false;
+        else
+        {
+            states->hand2[hndIdx].show = true;
+            states->hand2[hndIdx].transform = steamVRMat34ToGLMMat4(
+                poseData.pose.mDeviceToAbsoluteTracking);
+            auto& hndPos = states->hand2[hndIdx].transform[3];
+            hndPos[0] = hndPos[0] - HMDPose[3][0] + states->camera.getHeadPos().x;
+            hndPos[1] = hndPos[1] - HMDPose[3][1] + states->camera.getHeadPos().y;
+            hndPos[2] = hndPos[2] - HMDPose[3][2] + states->camera.getHeadPos().z;
+
+            vr::InputOriginInfo_t originInfo;
+            if (vr::VRInput()->GetOriginTrackedDeviceInfo(
+                poseData.activeOrigin, &originInfo, sizeof(originInfo)) ==
+                vr::VRInputError_None &&
+                originInfo.trackedDeviceIndex != vr::k_unTrackedDeviceIndexInvalid)
+            {
+                std::string modelName =
+                    getTrackedDeviceString(originInfo.trackedDeviceIndex, vr::Prop_RenderModelName_String);
+                // when name changed, change render model
+                if (modelName != states->hand2[hndIdx].modelName)
+                {
+                    states->hand2[hndIdx].modelName = modelName;
+                    auto [model, tex] = getRenderModelAndTex(modelName.c_str());
+                    if (model != nullptr && tex != nullptr)
+                        states->hand2[hndIdx].model = std::make_unique<VRRenderModel>(
+                            *model, *tex);
+                }
+            }
+        }
+        });
 
     // handle VR input action
     vr::VRActiveActionSet_t activeActionSet = { 0 };

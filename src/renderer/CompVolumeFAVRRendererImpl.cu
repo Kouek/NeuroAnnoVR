@@ -25,6 +25,7 @@ __constant__ cudaTextureObject_t dc_preIntTransferFunc;
 uint32_t* d_mappingTable = nullptr;
 __constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
 
+static bool sbsmplLvlChanged = true;
 cudaArray_t d_sbsmplTexArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
 cudaArray_t d_reconsTexArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
 cudaArray_t d_sbsmplColorTexArr2[2] = { nullptr };
@@ -37,7 +38,7 @@ __constant__ cudaTextureObject_t dc_reconsTexes[MAX_SUBSAMPLE_LEVEL_NUM];
 __constant__ cudaTextureObject_t dc_sbsmplColorTex2[2];
 
 glm::u8vec4* d_color2[2] = { nullptr }, * d_sbsmplColor2[2] = { nullptr };
-size_t d_colorSize;
+size_t d_colorSize, d_sbsmplColorSize;
 cudaGraphicsResource_t outColorTexRsc2[2] = { nullptr };
 cudaGraphicsResource_t inDepthTexRsc2[2] = { nullptr };
 struct
@@ -47,6 +48,15 @@ struct
 }depthTexDesc;
 cudaTextureObject_t d_depthTex2[2];
 cudaArray_t d_colorArr2[2] = { nullptr }, d_depthArr2[2] = { nullptr };
+
+struct PosWithScalar
+{
+	glm::vec3 pos;
+	float scalar;
+};
+PosWithScalar* d_intrctPossInXY = nullptr;
+PosWithScalar* d_intrctPossInX = nullptr;
+PosWithScalar* intrctPossInX = nullptr;
 
 cudaStream_t stream = nullptr;
 
@@ -150,39 +160,6 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::registerGLResource(
 	depthTexDesc.texDesc.addressMode[0] = cudaAddressModeClamp;
 	depthTexDesc.texDesc.addressMode[1] = cudaAddressModeClamp;
 	depthTexDesc.texDesc.readMode = cudaReadModeElementType;
-
-	CUDA_RUNTIME_API_CALL(
-		cudaMalloc(&d_sbsmplColor2[0], d_colorSize));
-	CUDA_RUNTIME_API_CALL(
-		cudaMalloc(&d_sbsmplColor2[1], d_colorSize));
-	{
-		cudaChannelFormatDesc chnnlDesc = cudaCreateChannelDesc(
-			8, 8, 8, 8, cudaChannelFormatKindUnsigned);
-		CUDA_RUNTIME_API_CALL(
-			cudaMallocArray(&d_sbsmplColorTexArr2[0], &chnnlDesc, w, h));
-		CUDA_RUNTIME_API_CALL(
-			cudaMallocArray(&d_sbsmplColorTexArr2[1], &chnnlDesc, w, h));
-		cudaResourceDesc rscDesc;
-		memset(&rscDesc, 0, sizeof(cudaResourceDesc));
-		rscDesc.resType = cudaResourceTypeArray;
-		rscDesc.res.array.array = d_sbsmplColorTexArr2[0];
-		cudaTextureDesc texDesc;
-		memset(&texDesc, 0, sizeof(cudaTextureDesc));
-		texDesc.normalizedCoords = 1;
-		texDesc.filterMode = cudaFilterModeLinear;
-		texDesc.addressMode[0] = cudaAddressModeWrap;
-		texDesc.addressMode[1] = cudaAddressModeWrap;
-		texDesc.readMode = cudaReadModeNormalizedFloat;
-		CUDA_RUNTIME_API_CALL(
-			cudaCreateTextureObject(&d_sbsmplColorTex2[0], &rscDesc, &texDesc, nullptr));
-
-		rscDesc.res.array.array = d_sbsmplColorTexArr2[1];
-		CUDA_RUNTIME_API_CALL(
-			cudaCreateTextureObject(&d_sbsmplColorTex2[1], &rscDesc, &texDesc, nullptr));
-
-		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
-			dc_sbsmplColorTex2, d_sbsmplColorTex2, sizeof(cudaTextureObject_t) * 2));
-	}
 }
 
 void kouek::CompVolumeRendererCUDA::FAVRFunc::unregisterGLResource()
@@ -202,88 +179,163 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::unregisterGLResource()
 		}
 }
 
-__global__ void createSubsampleTexKernel(
-	glm::vec4* d_sbsmpl,
+static void createSubsampleColorTex(
 	uint32_t sbsmplTexW, uint32_t sbsmplTexH)
+{
+	if (d_sbsmplColorTexArr2[0] != nullptr)
+	{
+		CUDA_RUNTIME_API_CALL(cudaFree(d_sbsmplColor2[0]));
+		CUDA_RUNTIME_API_CALL(cudaFree(d_sbsmplColor2[1]));
+		CUDA_RUNTIME_API_CALL(cudaDestroyTextureObject(d_sbsmplColorTex2[0]));
+		CUDA_RUNTIME_API_CALL(cudaDestroyTextureObject(d_sbsmplColorTex2[1]));
+		CUDA_RUNTIME_API_CALL(cudaFreeArray(d_sbsmplColorTexArr2[0]));
+		CUDA_RUNTIME_API_CALL(cudaFreeArray(d_sbsmplColorTexArr2[1]));
+		d_sbsmplColorTexArr2[0] = d_sbsmplColorTexArr2[1] = nullptr;
+	}
+
+	d_sbsmplColorSize = sizeof(glm::u8vec4) * sbsmplTexW * sbsmplTexH;
+	CUDA_RUNTIME_API_CALL(
+		cudaMalloc(&d_sbsmplColor2[0], d_sbsmplColorSize));
+	CUDA_RUNTIME_API_CALL(
+		cudaMalloc(&d_sbsmplColor2[1], d_sbsmplColorSize));
+	{
+		cudaChannelFormatDesc chnnlDesc = cudaCreateChannelDesc(
+			8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+		CUDA_RUNTIME_API_CALL(
+			cudaMallocArray(&d_sbsmplColorTexArr2[0], &chnnlDesc,
+				sbsmplTexW, sbsmplTexH));
+		CUDA_RUNTIME_API_CALL(
+			cudaMallocArray(&d_sbsmplColorTexArr2[1], &chnnlDesc,
+				sbsmplTexW, sbsmplTexH));
+		cudaResourceDesc rscDesc;
+		memset(&rscDesc, 0, sizeof(cudaResourceDesc));
+		rscDesc.resType = cudaResourceTypeArray;
+		rscDesc.res.array.array = d_sbsmplColorTexArr2[0];
+		cudaTextureDesc texDesc;
+		memset(&texDesc, 0, sizeof(cudaTextureDesc));
+		texDesc.normalizedCoords = 0;
+		texDesc.filterMode = cudaFilterModePoint;
+		texDesc.addressMode[0] = cudaAddressModeClamp;
+		texDesc.addressMode[1] = cudaAddressModeClamp;
+		texDesc.readMode = cudaReadModeNormalizedFloat;
+		CUDA_RUNTIME_API_CALL(
+			cudaCreateTextureObject(&d_sbsmplColorTex2[0], &rscDesc, &texDesc, nullptr));
+
+		rscDesc.res.array.array = d_sbsmplColorTexArr2[1];
+		CUDA_RUNTIME_API_CALL(
+			cudaCreateTextureObject(&d_sbsmplColorTex2[1], &rscDesc, &texDesc, nullptr));
+
+		CUDA_RUNTIME_API_CALL(cudaMemcpyToSymbol(
+			dc_sbsmplColorTex2, d_sbsmplColorTex2, sizeof(cudaTextureObject_t) * 2));
+	}
+}
+
+__global__ void createSubsampleTexKernel(glm::vec4* d_sbsmpl)
 {
 	uint32_t texX = blockIdx.x * blockDim.x + threadIdx.x;
 	uint32_t texY = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t texFlatIdx = (size_t)texY * sbsmplTexW + texX;
-	if (texX > sbsmplTexW|| texY > sbsmplTexH) return;
+	if (texX >= dc_renderParam.sbsmplSize.x
+		|| texY >= dc_renderParam.sbsmplSize.y) return;
+	size_t texFlatIdx = (size_t)texY * dc_renderParam.sbsmplSize.x + texX;
 
-	float centerY = .5f * sbsmplTexW;
-	float hfSbsmplW = .5f * sbsmplTexW;
+	float centerY, hfSbsmplW;
+	centerY = hfSbsmplW = .5f * dc_renderParam.sbsmplSize.x;
 	float x, y, radSqr, scale;
-	x = (float)texX - hfSbsmplW, y = (float)texY - centerY;
-	radSqr = x * x + y * y;
 
-	glm::vec4 X_Y_Null_HasVal;
 	for (uint8_t stage = 0;
 		stage < dc_renderParam.sbsmplLvl;
-		++stage, centerY += sbsmplTexW)
+		++stage, centerY += dc_renderParam.sbsmplSize.x)
 	{
 		if (texY < centerY - hfSbsmplW || texY >= centerY + hfSbsmplW) continue;
 
+		x = (float)texX - hfSbsmplW;
+		y = (float)texY - centerY;
+		radSqr = x * x + y * y;
+
 		scale = 1.f - (float)stage / dc_renderParam.sbsmplLvl;
-		x /= sbsmplTexW, y /= sbsmplTexW;
-		x /= scale, y /= scale;
-		x = (x + 1.f) * .5f, y = (y + 1.f) * .5f;
+		x = x / scale / dc_renderParam.windowSize.x + .5f;
+		y = y / scale / dc_renderParam.windowSize.x + .5f;
 
 		scale *= scale;
-
 		if (radSqr >= dc_sbsmplRadSqrs[stage] * scale
 			&& radSqr < dc_sbsmplRadSqrs[stage + 1] * scale)
 		{
-			X_Y_Null_HasVal.x = x;
-			X_Y_Null_HasVal.y = y;
-			X_Y_Null_HasVal.z = 0;
-			X_Y_Null_HasVal.w = 1.f;
+			d_sbsmpl[texFlatIdx].x = __saturatef(x);
+			d_sbsmpl[texFlatIdx].y = __saturatef(y);
+			d_sbsmpl[texFlatIdx].z = 0;
+			d_sbsmpl[texFlatIdx].w = 1.f;
 		}
 		else
-			X_Y_Null_HasVal.x = x = X_Y_Null_HasVal.y = y =
-			X_Y_Null_HasVal.z = X_Y_Null_HasVal.w = 0;
-		d_sbsmpl[texFlatIdx] = X_Y_Null_HasVal;
+		{
+			d_sbsmpl[texFlatIdx].x = d_sbsmpl[texFlatIdx].y
+				= d_sbsmpl[texFlatIdx].z = 1.f;
+			d_sbsmpl[texFlatIdx].w = 0;
+		}
 	}
 }
 
-__global__ void createReconstructionTexKernel(
-	glm::vec4* d_recons, uint32_t sbsmplTexW, uint32_t sbsmplTexH)
+__global__ void createReconstructionTexKernel(glm::vec4* d_recons)
 {
 	uint32_t texX = blockIdx.x * blockDim.x + threadIdx.x;
 	uint32_t texY = blockIdx.y * blockDim.y + threadIdx.y;
-	size_t texFlatIdx = (size_t)texY * sbsmplTexW + texX;
-	if (texX > sbsmplTexW || texY > sbsmplTexW) return;
+	if (texX >= dc_renderParam.windowSize.x || texY >= dc_renderParam.windowSize.x) return;
+	size_t texFlatIdx = (size_t)texY * dc_renderParam.windowSize.x + texX;
+	uint8_t idx = dc_renderParam.sbsmplLvl - 1;
 
-	float sbsmplCntrY = .5f * sbsmplTexW;
-	float hfSbsmplW = .5f * sbsmplTexW;
+	float hfW = .5f * dc_renderParam.windowSize.x;
+	float hfSbsmplW = .5f * dc_renderParam.sbsmplSize.x;
+	float sbsmplCntrY = .5f * dc_renderParam.sbsmplSize.x;
 	float x, y, radSqr, scale;
-	x = (float)texX - hfSbsmplW, y = (float)texY - hfSbsmplW;
+	x = (float)texX - hfW;
+	y = (float)texY - hfW;
 	radSqr = x * x + y * y;
+	glm::vec2 xy = { x,y };
+	glm::vec2 drc = glm::normalize(xy);
 
-	for (uint8_t stage = 0;
-		stage < dc_renderParam.sbsmplLvl;
-		++stage, sbsmplCntrY += sbsmplTexW)
+	uint8_t stage;
+	for (stage = 0; stage < dc_renderParam.sbsmplLvl;
+		++stage, sbsmplCntrY += dc_renderParam.sbsmplSize.x)
 	{
-		scale = 1.f - (float)stage / dc_renderParam.sbsmplLvl;
-		scale *= scale;
-
-		if (radSqr < dc_sbsmplRadSqrs[stage] * scale + stage == 0 ? 0 : INTER_STAGE_OVERLAP_WIDTH_SQR
-			|| radSqr > dc_sbsmplRadSqrs[stage + 1] * scale + INTER_STAGE_OVERLAP_WIDTH_SQR)
+		if (radSqr < dc_sbsmplRadSqrs[stage] || radSqr >= dc_sbsmplRadSqrs[stage + 1])
 			continue;
 
-		x += hfSbsmplW, y += sbsmplCntrY;
-		x /= sbsmplTexW, y /= sbsmplTexH;
-
-		d_recons[texFlatIdx].x = x, d_recons[texFlatIdx].y = y,
-			d_recons[texFlatIdx].z = 0, d_recons[texFlatIdx].w = 1.f;
+		scale = 1.f - (float)stage / dc_renderParam.sbsmplLvl;
+		x = xy.x * scale + hfSbsmplW;
+		y = xy.y * scale + sbsmplCntrY;
+		break; // necessary, avoid sbsmplCntrY increasing
 	}
+	// deal with inter-stage gap
+	float4 sbsmplTexVal = tex2D<float4>(
+		dc_sbsmplTexes[idx], x, y);
+	if (sbsmplTexVal.w == 0)
+	{
+		float maxRadSqr = .5f * dc_renderParam.windowSize.x;
+		maxRadSqr *= maxRadSqr;
+		float flag = (radSqr - dc_sbsmplRadSqrs[stage]) <
+			(fminf(dc_sbsmplRadSqrs[stage + 1], maxRadSqr) - radSqr)
+			? +1.f : -1.f;
+		for (uint8_t wid = 0; wid < INTER_STAGE_OVERLAP_WIDTH; ++wid)
+		{
+			xy += flag * drc;
+
+			x = xy.x * scale + hfSbsmplW;
+			y = xy.y * scale + sbsmplCntrY;
+			sbsmplTexVal = tex2D<float4>(
+				dc_sbsmplTexes[idx], x, y);
+			if (sbsmplTexVal.w != 0) break;
+		}
+	}
+	d_recons[texFlatIdx].x = x;
+	d_recons[texFlatIdx].y = y;
+	d_recons[texFlatIdx].z = 0;
+	d_recons[texFlatIdx].w = 1.f;
 }
 
-static void createSubsampleAndReconstructionTexes(uint8_t lvl, uint32_t w, uint32_t h)
+static void createSubsampleAndReconstructionTexes(
+	uint8_t lvl, uint32_t w, uint32_t h,
+	uint32_t sbsmplTexW, uint32_t sbsmplTexH)
 {
 	uint8_t idx = lvl - 1;
-	uint32_t sbsmplTexW = w / lvl;
-	uint32_t sbsmplTexH = sbsmplTexW * lvl;
 	{
 		cudaChannelFormatDesc chnnlDesc = cudaCreateChannelDesc<float4>();
 		CUDA_RUNTIME_API_CALL(
@@ -291,7 +343,7 @@ static void createSubsampleAndReconstructionTexes(uint8_t lvl, uint32_t w, uint3
 				sbsmplTexW, sbsmplTexH));
 		CUDA_RUNTIME_API_CALL(
 			cudaMallocArray(&d_reconsTexArrs[idx], &chnnlDesc,
-				sbsmplTexW, sbsmplTexW));
+				w, w));
 	}
 	{
 		cudaResourceDesc rscDesc;
@@ -300,10 +352,10 @@ static void createSubsampleAndReconstructionTexes(uint8_t lvl, uint32_t w, uint3
 		rscDesc.res.array.array = d_sbsmplTexArrs[idx];
 		cudaTextureDesc texDesc;
 		memset(&texDesc, 0, sizeof(cudaTextureDesc));
-		texDesc.normalizedCoords = 1;
-		texDesc.filterMode = cudaFilterModeLinear;
-		texDesc.addressMode[0] = cudaAddressModeWrap;
-		texDesc.addressMode[1] = cudaAddressModeWrap;
+		texDesc.normalizedCoords = 0;
+		texDesc.filterMode = cudaFilterModePoint;
+		texDesc.addressMode[0] = cudaAddressModeClamp;
+		texDesc.addressMode[1] = cudaAddressModeClamp;
 		texDesc.readMode = cudaReadModeElementType;
 		CUDA_RUNTIME_API_CALL(
 			cudaCreateTextureObject(&d_sbsmplTexes[idx], &rscDesc, &texDesc, nullptr));
@@ -320,7 +372,7 @@ static void createSubsampleAndReconstructionTexes(uint8_t lvl, uint32_t w, uint3
 		float sbsmplRadSqrs[MAX_SUBSAMPLE_LEVEL_NUM + 1] = { 0 };
 		for (uint8_t stage = 1; stage < lvl; ++stage)
 		{
-			sbsmplRadSqrs[stage] = (float)sbsmplTexW / (lvl - stage + 1);
+			sbsmplRadSqrs[stage] = .5f * w / (lvl - stage + 1);
 			sbsmplRadSqrs[stage] *= sbsmplRadSqrs[stage];
 		}
 		sbsmplRadSqrs[lvl] = INFINITY;
@@ -336,17 +388,17 @@ static void createSubsampleAndReconstructionTexes(uint8_t lvl, uint32_t w, uint3
 		dim3 threadPerBlock = { 16, 16 };
 		dim3 blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
 							 (sbsmplTexH + threadPerBlock.y - 1) / threadPerBlock.y };
-		createSubsampleTexKernel << <blockPerGrid, threadPerBlock, 0, stream >> > (
-			d_tmp, sbsmplTexW, sbsmplTexH);
+		createSubsampleTexKernel << <blockPerGrid, threadPerBlock, 0, stream >> > (d_tmp);
 
 		CUDA_RUNTIME_API_CALL(cudaMemcpyToArray(
 			d_sbsmplTexArrs[idx], 0, 0, d_tmp, d_tmpSize, cudaMemcpyDeviceToDevice));
+		CUDA_RUNTIME_API_CALL(cudaFree(d_tmp));
 
-		d_tmpSize = sizeof(glm::vec4) * sbsmplTexW * sbsmplTexW;
-		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
-							 (sbsmplTexW + threadPerBlock.y - 1) / threadPerBlock.y };
-		createReconstructionTexKernel << <blockPerGrid, threadPerBlock, 0, stream >> > (
-			d_tmp, sbsmplTexW, sbsmplTexH);
+		d_tmpSize = sizeof(glm::vec4) * w * w;
+		CUDA_RUNTIME_API_CALL(cudaMalloc(&d_tmp, d_tmpSize));
+		blockPerGrid = { (w + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (w + threadPerBlock.y - 1) / threadPerBlock.y };
+		createReconstructionTexKernel << <blockPerGrid, threadPerBlock, 0, stream >> > (d_tmp);
 
 		CUDA_RUNTIME_API_CALL(cudaMemcpyToArray(
 			d_reconsTexArrs[idx], 0, 0, d_tmp, d_tmpSize, cudaMemcpyDeviceToDevice));
@@ -390,6 +442,68 @@ __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 		GPUMemSamplePos.x, GPUMemSamplePos.y, GPUMemSamplePos.z);
 }
 
+__global__ void findInteractionPosInXYZKernel(PosWithScalar* d_intrctPossInXY)
+{
+	uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
+	uint32_t y = blockIdx.y * blockDim.y + threadIdx.y;
+	if (x >= INTERACTION_SAMPLE_DIM || y >= INTERACTION_SAMPLE_DIM) return;
+	size_t flatIdx = y * INTERACTION_SAMPLE_DIM + x;
+
+	float maxScalar = 0;
+	glm::vec3 samplePos, intrctPos;
+	glm::vec3 subrgnCenterInWdSp = {
+		.5f * dc_renderParam.subrgn.halfW,
+		.5f * dc_renderParam.subrgn.halfH,
+		.5f * dc_renderParam.subrgn.halfD,
+	};
+	glm::vec3 step3 = dc_renderParam.intrctParam.dat.ball.AABBSize
+		/ (float)INTERACTION_SAMPLE_DIM;
+	glm::vec3 pos = dc_renderParam.intrctParam.dat.ball.startPos;
+	pos.x += step3.x * x;
+	pos.y += step3.y * y;
+	for (uint32_t stepCnt = 0;
+		stepCnt < INTERACTION_SAMPLE_DIM;
+		++stepCnt, pos.z += step3.z)
+	{
+		// ray pos in World Space -> sample pos in Voxel Space
+		samplePos =
+			(pos - subrgnCenterInWdSp + dc_renderParam.subrgn.center)
+			/ dc_compVolumeParam.spaces;
+		float scalar = virtualSampleLOD0(samplePos);
+		if (scalar > maxScalar)
+		{
+			maxScalar = scalar;
+			intrctPos = pos;
+		}
+	}
+	d_intrctPossInXY[flatIdx].pos = intrctPos;
+	d_intrctPossInXY[flatIdx].scalar = maxScalar;
+}
+
+__global__ void findInteractionPosInXYKernel(
+	PosWithScalar* d_intrctPossInX, PosWithScalar* d_intrctPossInXY)
+{
+	uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
+	if (x >= INTERACTION_SAMPLE_DIM) return;
+
+	float maxScalar = 0;
+	glm::vec3 intrctPos;
+	size_t flatIdx = x;
+	for (uint32_t y = 0;
+		y < INTERACTION_SAMPLE_DIM;
+		++y, flatIdx += INTERACTION_SAMPLE_DIM)
+	{
+		float scalar = d_intrctPossInXY[flatIdx].scalar;
+		if (scalar > maxScalar)
+		{
+			maxScalar = scalar;
+			intrctPos = d_intrctPossInXY[flatIdx].pos;
+		}
+	}
+	d_intrctPossInX[x].pos = intrctPos;
+	d_intrctPossInX[x].scalar = maxScalar;
+}
+
 __device__ glm::u8vec4 rgbaFloatToUbyte4(float r, float g, float b, float a)
 {
 	r = __saturatef(r); // clamp to [0.0, 1.0]
@@ -412,19 +526,19 @@ __device__ void rayIntersectAABB(
 	// Thus t3Bot.x = Bot.x / Drc.x
 	// Thus t3Bot.y = Bot.x / Drc.y
 	// If  \
-			//  \_\|\ 
-			//   \_\|
-			//      \.t3Bot.x
-			//      |\
-			//    __|_\.___|
-			//      |  \t3Bot.y
-			//    __|___\._|_
-			//    t3Top.y\ |
-			//      |     \.t3Top.x
-			// 
-			// Then t3Min = t3Bot, t3Max = t3Top
-			// And  the max of t3Min is tEnter
-			// And  the min of t3Max is tExit
+	//  \_\|\ 
+	//   \_\|
+	//      \.t3Bot.x
+	//      |\
+	//    __|_\.___|
+	//      |  \t3Bot.y
+	//    __|___\._|_
+	//    t3Top.y\ |
+	//      |     \.t3Top.x
+	// 
+	// Then t3Min = t3Bot, t3Max = t3Top
+	// And  the max of t3Min is tEnter
+	// And  the min of t3Max is tExit
 
 	glm::vec3 invRay = 1.f / rayDrc;
 	glm::vec3 t3Bot = invRay * (bot - rayOri);
@@ -630,28 +744,29 @@ __global__ void renderKernel(
 __global__ void testSubsampleTexKernel(
 	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
 {
-	uint32_t windowW = dc_renderParam.windowSize.x / dc_renderParam.sbsmplLvl;
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
 	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
-	if (windowX >= windowW || windowY >= dc_renderParam.windowSize.y) return;
+	if (windowX >= dc_renderParam.sbsmplSize.x
+		|| windowY >= dc_renderParam.windowSize.y) return;
 	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.windowSize.x + windowX;
 
 	glm::u8vec4& d_color = blockIdx.z == 0 ?
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 sbsmplTexVal = tex2D<float4>(dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX / windowW, (float)windowY / dc_renderParam.windowSize.y);
+		(float)windowX,
+		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.sbsmplSize.y);
 	d_color = rgbaFloatToUbyte4(sbsmplTexVal.x, sbsmplTexVal.y, sbsmplTexVal.z, 1.f);
 }
 
-__global__ void FAVRSubsample(
+__global__ void subsampleKernel(
 	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR,
 	cudaTextureObject_t d_depthTexL, cudaTextureObject_t d_depthTexR)
 {
-	uint32_t windowW = dc_renderParam.windowSize.x / dc_renderParam.sbsmplLvl;
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
 	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
-	if (windowX >= windowW || windowY >= dc_renderParam.windowSize.y) return;
-	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.windowSize.x + windowX;
+	if (windowX >= dc_renderParam.sbsmplSize.x
+		|| windowY >= dc_renderParam.sbsmplSize.y) return;
+	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.sbsmplSize.x + windowX;
 	
 	// render Left or Right Eye
 	glm::u8vec4& d_color = blockIdx.z == 0 ?
@@ -664,9 +779,15 @@ __global__ void FAVRSubsample(
 
 	// sample the original Window Pos
 	glm::vec2 oriWindow;
-	float4 sbsmplTexVal = tex2D<float4>(dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX / windowW, (float)windowY / dc_renderParam.windowSize.y);
-	if (sbsmplTexVal.w == 0) return;
+	float4 sbsmplTexVal = tex2D<float4>(
+		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
+		(float)windowX, (float)windowY);
+	if (sbsmplTexVal.w == 0)
+	{
+		d_color = rgbaFloatToUbyte4(0, 0, 1.f, 1.f);
+		return;
+	}
+
 	oriWindow.x = sbsmplTexVal.x * dc_renderParam.windowSize.x;
 	oriWindow.y = sbsmplTexVal.y * dc_renderParam.windowSize.y;
 	if (oriWindow.x >= dc_renderParam.windowSize.x
@@ -785,6 +906,24 @@ __global__ void FAVRSubsample(
 	d_color = rgbaFloatToUbyte4(color.r, color.g, color.b, color.a);
 }
 
+__global__ void testSubsampleKernel(
+	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
+{
+	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
+	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
+	if (windowX >= dc_renderParam.sbsmplSize.x
+		|| windowY >= dc_renderParam.sbsmplSize.y) return;
+	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.windowSize.x + windowX;
+
+	glm::u8vec4& d_color = blockIdx.z == 0 ?
+		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
+	float4 sbsmplVal = tex2D<float4>(
+		dc_sbsmplColorTex2[blockIdx.z],
+		(float)windowX,
+		(float)windowY);
+	d_color = rgbaFloatToUbyte4(sbsmplVal.x, sbsmplVal.y, sbsmplVal.z, 1.f);
+}
+
 __global__ void testReconstructionTexKernel(
 	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
 {
@@ -797,12 +936,15 @@ __global__ void testReconstructionTexKernel(
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 reconsTexVal = tex2D<float4>(
 		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX / dc_renderParam.windowSize.x,
-		(float)windowY / dc_renderParam.windowSize.y);
-	d_color = rgbaFloatToUbyte4(reconsTexVal.x, reconsTexVal.y, reconsTexVal.z, 1.f);
+		(float)windowX,
+		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.windowSize.x);
+	d_color = rgbaFloatToUbyte4(
+		reconsTexVal.x / dc_renderParam.sbsmplSize.x,
+		reconsTexVal.y / dc_renderParam.sbsmplSize.y,
+		reconsTexVal.z, 1.f);
 }
 
-__global__ void FAVRReconstruction(
+__global__ void testReconstructionKernel(
 	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
 {
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
@@ -812,18 +954,42 @@ __global__ void FAVRReconstruction(
 
 	glm::u8vec4& d_color = blockIdx.z == 0 ?
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
-	float scale = 1.f / dc_renderParam.sbsmplLvl;
 	float4 reconsTexVal = tex2D<float4>(
 		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX / dc_renderParam.windowSize.x,
-		(float)windowY / dc_renderParam.windowSize.y);
-	float4 sbsmplVal = tex2D<float4>(dc_sbsmplColorTex2[blockIdx.z],
-		reconsTexVal.x * scale, reconsTexVal.y);
+		(float)windowX,
+		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.windowSize.x);
+	float4 sbsmplTexVal = tex2D<float4>(
+		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
+		reconsTexVal.x, reconsTexVal.y);
+	d_color = rgbaFloatToUbyte4(sbsmplTexVal.x, sbsmplTexVal.y, sbsmplTexVal.z, 1.f);
+}
+
+__global__ void reconstructionKernel(
+	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
+{
+	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
+	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
+	if (windowX >= dc_renderParam.windowSize.x || windowY >= dc_renderParam.windowSize.y) return;
+	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.windowSize.x + windowX;
+
+	glm::u8vec4& d_color = blockIdx.z == 0 ?
+		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
+	float4 reconsTexVal = tex2D<float4>(
+		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
+		(float)windowX,
+		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.windowSize.x);
+	float4 sbsmplVal = tex2D<float4>(
+		dc_sbsmplColorTex2[blockIdx.z],
+		reconsTexVal.x, reconsTexVal.y);
 	d_color = rgbaFloatToUbyte4(sbsmplVal.x, sbsmplVal.y, sbsmplVal.z, sbsmplVal.w);
 }
 
+//#define NO_FAVR
 void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
-	uint32_t windowW, uint32_t windowH, uint8_t sbsmplLvl)
+	glm::vec3* intrctPos,
+	uint32_t windowW, uint32_t windowH,
+	uint32_t sbsmplTexW, uint32_t sbsmplTexH,
+	uint8_t sbsmplLvl, CompVolumeFAVRRenderer::RenderTarget renderTar)
 {
 	if (stream == nullptr)
 		CUDA_RUNTIME_CHECK(cudaStreamCreate(&stream));
@@ -831,10 +997,51 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 #ifndef NO_FAVR
 	assert(sbsmplLvl > 0 && sbsmplLvl <= MAX_SUBSAMPLE_LEVEL_NUM);
 	if (d_sbsmplTexArrs[sbsmplLvl - 1] == nullptr)
-		createSubsampleAndReconstructionTexes(sbsmplLvl, windowW, windowH);
+		createSubsampleAndReconstructionTexes(
+			sbsmplLvl, windowW, windowH, sbsmplTexW, sbsmplTexH);
+	if (sbsmplLvlChanged)
+	{
+		createSubsampleColorTex(sbsmplTexW, sbsmplTexH);
+		sbsmplLvlChanged = false;
+	}
 #endif // !NO_FAVR
 
 	// from here, called per frame, thus no CUDA_RUNTIME_API_CHECK
+
+	dim3 threadPerBlock = { 16, 16 };
+	dim3 blockPerGrid;
+
+	if (intrctPos != nullptr)
+	{
+		if (d_intrctPossInXY == nullptr)
+		{
+			CUDA_RUNTIME_API_CALL(
+				cudaMalloc(&d_intrctPossInXY, sizeof(PosWithScalar)
+					* INTERACTION_SAMPLE_DIM * INTERACTION_SAMPLE_DIM));
+			CUDA_RUNTIME_API_CALL(
+				cudaMalloc(&d_intrctPossInX, sizeof(PosWithScalar) * INTERACTION_SAMPLE_DIM));
+			intrctPossInX = new PosWithScalar[INTERACTION_SAMPLE_DIM];
+		}
+		blockPerGrid = { (INTERACTION_SAMPLE_DIM + threadPerBlock.x - 1) / threadPerBlock.x,
+						 (INTERACTION_SAMPLE_DIM + threadPerBlock.y - 1) / threadPerBlock.y };
+		findInteractionPosInXYZKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_intrctPossInXY);
+
+		blockPerGrid = { (INTERACTION_SAMPLE_DIM + threadPerBlock.x - 1) / threadPerBlock.x,
+			1 };
+		findInteractionPosInXYKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_intrctPossInX, d_intrctPossInXY);
+		cudaMemcpy(intrctPossInX, d_intrctPossInX,
+			sizeof(PosWithScalar) * INTERACTION_SAMPLE_DIM, cudaMemcpyDeviceToHost);
+		float maxScalar = 0;
+		for (uint32_t x =0;x < INTERACTION_SAMPLE_DIM;++x)
+			if (intrctPossInX[x].scalar > maxScalar)
+			{
+				maxScalar = intrctPossInX[x].scalar;
+				*intrctPos = intrctPossInX[x].pos;
+			}
+	}
+
 	for (uint8_t idx = 0; idx < 2; ++idx)
 	{
 		cudaGraphicsMapResources(1, &outColorTexRsc2[idx], stream);
@@ -847,53 +1054,67 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 			&depthTexDesc.texDesc, nullptr);
 	}
 
-	dim3 threadPerBlock = { 16, 16 };
-	dim3 blockPerGrid;
-#define TEST_SUBSAMPLE_TEX
 #ifdef NO_FAVR
-
 	blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
 						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 	renderKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
 		d_color2[0], d_color2[1], d_depthTex2[0], d_depthTex2[1]);
-
-#elif defined(TEST_RECONSTRUCTION_TEX)
-
-	blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
-						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
-	testReconstructionTexKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
-		d_color2[0], d_color2[1]);
-
 #else
-
-	blockPerGrid = { (windowW / sbsmplLvl + threadPerBlock.x - 1) / threadPerBlock.x,
+	switch (renderTar)
+	{
+	case CompVolumeFAVRRenderer::RenderTarget::SubsampleTex:
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
 						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		testSubsampleTexKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1]);
+		break;
+	case CompVolumeFAVRRenderer::RenderTarget::SubsampleResult:
+		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
+						 (sbsmplTexH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		subsampleKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_sbsmplColor2[0], d_sbsmplColor2[1],
+			d_depthTex2[0], d_depthTex2[1]);
+		cudaMemcpyToArray(d_sbsmplColorTexArr2[0], 0, 0, d_sbsmplColor2[0],
+			d_sbsmplColorSize, cudaMemcpyDeviceToDevice);
+		cudaMemcpyToArray(d_sbsmplColorTexArr2[1], 0, 0, d_sbsmplColor2[1],
+			d_sbsmplColorSize, cudaMemcpyDeviceToDevice);
 
-#	ifdef TEST_SUBSAMPLE_TEX
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		testSubsampleKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1]);
+		break;
+	case CompVolumeFAVRRenderer::RenderTarget::ReconstructionTex:
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		testReconstructionTexKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1]);
+		break;
+	case CompVolumeFAVRRenderer::RenderTarget::ReconstructionResult:
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		testReconstructionKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1]);
+		break;
+	case CompVolumeFAVRRenderer::RenderTarget::Image:
+		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
+						 (sbsmplTexH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		subsampleKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_sbsmplColor2[0], d_sbsmplColor2[1],
+			d_depthTex2[0], d_depthTex2[1]);
+		cudaMemcpyToArray(d_sbsmplColorTexArr2[0], 0, 0, d_sbsmplColor2[0],
+			d_sbsmplColorSize, cudaMemcpyDeviceToDevice);
+		cudaMemcpyToArray(d_sbsmplColorTexArr2[1], 0, 0, d_sbsmplColor2[1],
+			d_sbsmplColorSize, cudaMemcpyDeviceToDevice);
 
-	testSubsampleTexKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
-		d_color2[0], d_color2[1]);
-
-#	elif defined(TEST_SUBSAMPLE)
-
-	FAVRSubsample << < blockPerGrid, threadPerBlock, 0, stream >> > (
-		d_color2[0], d_color2[1], d_depthTex2[0], d_depthTex2[1]);
-
-#	else
-
-	FAVRSubsample << < blockPerGrid, threadPerBlock, 0, stream >> > (
-		d_sbsmplColor2[0], d_sbsmplColor2[1], d_depthTex2[0], d_depthTex2[1]);
-	cudaMemcpyToArray(d_sbsmplColorTexArr2[0], 0, 0, d_sbsmplColor2[0],
-		d_colorSize, cudaMemcpyDeviceToDevice);
-	cudaMemcpyToArray(d_sbsmplColorTexArr2[1], 0, 0, d_sbsmplColor2[1],
-		d_colorSize, cudaMemcpyDeviceToDevice);
-
-	blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
-						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
-	FAVRReconstruction << < blockPerGrid, threadPerBlock, 0, stream >> > (
-		d_color2[0], d_color2[1]);
-
-#	endif
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		reconstructionKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1]);
+		break;
+	default:
+		assert(false);
+	}
 #endif // NO_FAVR
 
 	for (uint8_t idx = 0; idx < 2; ++idx)

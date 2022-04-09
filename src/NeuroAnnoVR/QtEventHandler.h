@@ -21,10 +21,29 @@ namespace kouek
 			QObject::connect(sender, &EditorWindow::closed, [&]() {
 				states->canRun = false;
 				});
+			auto increaseRenderTar = [](CompVolumeFAVRRenderer::RenderTarget& renderTar) {
+				uint8_t idx = static_cast<uint8_t>(renderTar) + 1;
+				if (idx == static_cast<uint8_t>(
+					CompVolumeFAVRRenderer::RenderTarget::Last))
+					idx = 0;
+				renderTar = static_cast<CompVolumeFAVRRenderer::RenderTarget>(idx);
+			};
+			auto decreaseRenderTar = [](CompVolumeFAVRRenderer::RenderTarget& renderTar) {
+				uint8_t idx = static_cast<uint8_t>(renderTar) - 1;
+				if (idx > static_cast<uint8_t>(
+					CompVolumeFAVRRenderer::RenderTarget::Last))
+					idx = static_cast<uint8_t>(
+						CompVolumeFAVRRenderer::RenderTarget::Last) - 1;
+				renderTar = static_cast<CompVolumeFAVRRenderer::RenderTarget>(idx);
+			};
 			QObject::connect(sender->getVRView(), &VRView::keyPressed,
 				[&](int key) {
 					switch (key)
 					{
+					case Qt::Key_Plus:
+						increaseRenderTar(states->renderTar); break;
+					case Qt::Key_Minus:
+						decreaseRenderTar(states->renderTar); break;
 					case Qt::Key_Up:
 						moveSteps[2] = +AppStates::moveSensity; break;
 					case Qt::Key_Down:
