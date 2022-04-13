@@ -29,6 +29,7 @@ namespace kouek
 
 	signals:
 		void closed();
+		void reloadTFBtnClicked();
 
 	protected:
 		virtual void closeEvent(QCloseEvent* e) override;

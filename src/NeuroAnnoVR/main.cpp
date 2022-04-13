@@ -2,18 +2,17 @@
 #include <renderer/Renderer.h>
 
 #include <QtWidgets/qapplication.h>
-#include <QtGUI/qopenglshaderprogram.h>
 
 #include "VREventHandler.h"
 #include "QtEventHandler.h"
+#include "Shaders.h"
 
 #include <spdlog/spdlog.h>
 
-using namespace kouek;
-
-
 #include <util/VolumeCfg.h>
 #include <util/RenderObj.h>
+
+using namespace kouek;
 
 #define GL_CHECK \
          {       \
@@ -192,7 +191,6 @@ struct VolumeRenderType
 	uint32_t noPadBlkLen;
 	std::array<GLuint, 2> tex2;
 	std::shared_ptr<vs::CompVolume> volume;
-	std::unique_ptr<kouek::CompVolumeFAVRRenderer> renderer;
 };
 static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<AppStates> states)
 {
@@ -202,7 +200,7 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 		param.ctx = GetCUDACtx();
 		param.texUnitNum = 6;
 		param.texUnitDim = { 1024,1024,1024 };
-		volumeRender.renderer = CompVolumeFAVRRenderer::create(param);
+		states->renderer = CompVolumeFAVRRenderer::create(param);
 	}
 	try
 	{
@@ -213,11 +211,12 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 		volumeRender.volume->SetSpaceX(cfg.getSpaceX() * scale);
 		volumeRender.volume->SetSpaceY(cfg.getSpaceY() * scale);
 		volumeRender.volume->SetSpaceZ(cfg.getSpaceZ() * scale);
-		volumeRender.renderer->setStep(3000, cfg.getBaseSpace() * scale * .3f );
+		states->renderer->setStep(3000, cfg.getBaseSpace() * scale * .3f );
 		AppStates::subrgnMoveSensity = AppStates::moveSensity = std::max(
 			volumeRender.volume->GetVolumeSpaceX(),
 			volumeRender.volume->GetVolumeSpaceY());
-		volumeRender.renderer->setVolume(volumeRender.volume);
+		states->renderer->setVolume(volumeRender.volume);
+		states->renderer->setTransferFunc(cfg.getTF());
 	}
 	catch (std::exception& e)
 	{
@@ -225,17 +224,17 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 			__LINE__, e.what());
 		return;
 	}
-	{
-		vs::TransferFunc tf;
-		tf.points.emplace_back(0, std::array<double, 4>{0.0, 0.1, 0.6, 0.0});
-		tf.points.emplace_back(25, std::array<double, 4>{0.25, 0.5, 1.0, 0.0});
-		tf.points.emplace_back(30, std::array<double, 4>{0.25, 0.5, 1.0, 0.2});
-		tf.points.emplace_back(40, std::array<double, 4>{0.25, 0.5, 1.0, 0.1});
-		tf.points.emplace_back(64, std::array<double, 4>{0.75, 0.50, 0.25, 0.4});
-		tf.points.emplace_back(224, std::array<double, 4>{0.75, 0.75, 0.25, 0.6});
-		tf.points.emplace_back(255, std::array<double, 4>{1.00, 0.75, 0.75, 0.4});
-		volumeRender.renderer->setTransferFunc(tf);
-	}
+	//{
+	//	vs::TransferFunc tf;
+	//	tf.points.emplace_back(0, std::array<double, 4>{0.0, 0.1, 0.6, 0.0});
+	//	tf.points.emplace_back(25, std::array<double, 4>{0.25, 0.5, 1.0, 0.0});
+	//	tf.points.emplace_back(30, std::array<double, 4>{0.25, 0.5, 1.0, 0.2});
+	//	tf.points.emplace_back(40, std::array<double, 4>{0.25, 0.5, 1.0, 0.1});
+	//	tf.points.emplace_back(64, std::array<double, 4>{0.75, 0.50, 0.25, 0.4});
+	//	tf.points.emplace_back(224, std::array<double, 4>{0.75, 0.75, 0.25, 0.6});
+	//	tf.points.emplace_back(255, std::array<double, 4>{1.00, 0.75, 0.75, 0.4});
+	//	states->renderer->setTransferFunc(tf);
+	//}
 	{
 		CompVolumeRenderer::LightParamter param;
 		param.ka = 0.5f;
@@ -243,7 +242,7 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 		param.ks = 0.5f;
 		param.shininess = 64.f;
 		param.bkgrndColor = { .2f,.3f,.4f,.1f };
-		volumeRender.renderer->setLightParam(param);
+		states->renderer->setLightParam(param);
 	}
 	{
 		const auto& blkLenInfo = volumeRender.volume->GetBlockLength();
@@ -257,133 +256,6 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 	}
 	volumeRender.tex2[0] = createPlainTexture(states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 	volumeRender.tex2[1] = createPlainTexture(states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
-}
-
-struct ShaderProgramsType
-{
-	GLint colorShaderMatrixPos, diffuseShaderMatrixPos;
-	GLint depthShaderMatrixPos, zeroDepthShaderMatrixPos;
-	QOpenGLShaderProgram colorShader, diffuseShader;
-	QOpenGLShaderProgram depthShader, zeroDepthShader;
-};
-static void initShaderPrograms(ShaderProgramsType& shaders)
-{
-	{
-		const char* vertShaderCode =
-			"#version 410 core\n"
-			"uniform mat4 matrix;\n"
-			"layout(location = 0) in vec3 position;\n"
-			"layout(location = 1) in vec3 v3ColorIn;\n"
-			"void main()\n"
-			"{\n"
-			"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
-			"}\n";
-		const char* fragShaderCode =
-			"#version 410 core\n"
-			"out vec4 outputColor;\n"
-			"void main()\n"
-			"{\n"
-			"    outputColor = vec4(vec3(gl_FragCoord.z), 1.0);\n"
-			"}\n";
-		shaders.depthShader.addShaderFromSourceCode(
-			QOpenGLShader::Vertex, vertShaderCode);
-		shaders.depthShader.addShaderFromSourceCode(
-			QOpenGLShader::Fragment, fragShaderCode);
-		shaders.depthShader.link();
-		assert(shaders.depthShader.isLinked());
-
-		shaders.depthShaderMatrixPos = shaders.depthShader.uniformLocation("matrix");
-		assert(shaders.depthShaderMatrixPos != -1);
-	}
-	{
-		const char* vertShaderCode =
-			"#version 410 core\n"
-			"uniform mat4 matrix;\n"
-			"layout(location = 0) in vec3 position;\n"
-			"layout(location = 1) in vec3 v3ColorIn;\n"
-			"void main()\n"
-			"{\n"
-			"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
-			"}\n";
-		const char* fragShaderCode =
-			"#version 410 core\n"
-			"out vec4 outputColor;\n"
-			"void main()\n"
-			"{\n"
-			"    outputColor = vec4(0, 1.0);\n"
-			"}\n";
-		shaders.zeroDepthShader.addShaderFromSourceCode(
-			QOpenGLShader::Vertex, vertShaderCode);
-		shaders.zeroDepthShader.addShaderFromSourceCode(
-			QOpenGLShader::Fragment, fragShaderCode);
-		shaders.zeroDepthShader.link();
-		assert(shaders.zeroDepthShader.isLinked());
-
-		shaders.zeroDepthShaderMatrixPos = shaders.depthShader.uniformLocation("matrix");
-		assert(shaders.zeroDepthShaderMatrixPos != -1);
-	}
-	{
-		const char* vertShaderCode =
-			"#version 410 core\n"
-			"uniform mat4 matrix;\n"
-			"layout(location = 0) in vec3 position;\n"
-			"layout(location = 1) in vec3 v3ColorIn;\n"
-			"out vec4 v4Color;\n"
-			"void main()\n"
-			"{\n"
-			"	v4Color.xyz = v3ColorIn; v4Color.a = 1.0;\n"
-			"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
-			"}\n";
-		const char* fragShaderCode =
-			"#version 410 core\n"
-			"in vec4 v4Color;\n"
-			"out vec4 outputColor;\n"
-			"void main()\n"
-			"{\n"
-			"    outputColor = v4Color;\n"
-			"}\n";
-		shaders.colorShader.addShaderFromSourceCode(
-			QOpenGLShader::Vertex, vertShaderCode);
-		shaders.colorShader.addShaderFromSourceCode(
-			QOpenGLShader::Fragment, fragShaderCode);
-		shaders.colorShader.link();
-		assert(shaders.colorShader.isLinked());
-
-		shaders.colorShaderMatrixPos = shaders.colorShader.uniformLocation("matrix");
-		assert(shaders.colorShaderMatrixPos != -1);
-	}
-	{
-		const char* vertShaderCode =
-			"#version 410 core\n"
-			"uniform mat4 matrix;\n"
-			"layout(location = 0) in vec3 position;\n"
-			"layout(location = 1) in vec3 v3NormalIn;\n"
-			"layout(location = 2) in vec2 v2TexCoordsIn;\n"
-			"out vec2 v2TexCoord;\n"
-			"void main()\n"
-			"{\n"
-			"	v2TexCoord = v2TexCoordsIn;\n"
-			"	gl_Position = matrix * vec4(position.xyz, 1);\n"
-			"}\n";
-		const char* fragShaderCode =
-			"#version 410 core\n"
-			"uniform sampler2D diffuse;\n"
-			"in vec2 v2TexCoord;\n"
-			"out vec4 outputColor;\n"
-			"void main()\n"
-			"{\n"
-			"	outputColor = texture(diffuse, v2TexCoord);\n"
-			"}\n";
-		shaders.diffuseShader.addShaderFromSourceCode(
-			QOpenGLShader::Vertex, vertShaderCode);
-		shaders.diffuseShader.addShaderFromSourceCode(
-			QOpenGLShader::Fragment, fragShaderCode);
-		shaders.diffuseShader.link();
-		assert(shaders.diffuseShader.isLinked());
-
-		shaders.diffuseShaderMatrixPos = shaders.diffuseShader.uniformLocation("matrix");
-		assert(shaders.diffuseShaderMatrixPos != -1);
-	}
 }
 
 int main(int argc, char** argv)
@@ -415,8 +287,7 @@ int main(int argc, char** argv)
 	VolumeRenderType volumeRender;
 	initVolumeRender(volumeRender, states);
 
-	ShaderProgramsType shaders;
-	initShaderPrograms(shaders);
+	Shaders shaders;
 
 	struct
 	{
@@ -442,7 +313,6 @@ int main(int argc, char** argv)
 	struct
 	{
 		GLuint VAO, VBO;
-		glm::vec3 pos;
 	}intrctPoint;
 	std::tie(intrctPoint.VAO, intrctPoint.VBO) = createPoint();
 
@@ -477,7 +347,7 @@ int main(int argc, char** argv)
 				states->HMDRenderSizePerEye[1]);
 		});
 
-	volumeRender.renderer->registerGLResource(
+	states->renderer->registerGLResource(
 		volumeRender.tex2[vr::Eye_Left], volumeRender.tex2[vr::Eye_Right],
 		depthFramebuffer2[vr::Eye_Left].colorTex, depthFramebuffer2[vr::Eye_Right].colorTex,
 		states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
@@ -487,13 +357,6 @@ int main(int argc, char** argv)
 		vr::Texture_t{(void*)(uintptr_t)submitFramebuffer2[vr::Eye_Left].colorTex, vr::TextureType_OpenGL, vr::ColorSpace_Gamma},
 		vr::Texture_t{(void*)(uintptr_t)submitFramebuffer2[vr::Eye_Right].colorTex, vr::TextureType_OpenGL, vr::ColorSpace_Gamma}
 	};
-
-	Math::printGLMMat4(states->eyeToHMD2[vr::Eye_Left], "HMDToEye L");
-	Math::printGLMMat4(states->eyeToHMD2[vr::Eye_Right], "HMDToEye R");
-	Math::printGLMMat4(states->projection2[vr::Eye_Left], "Projection L");
-	Math::printGLMMat4(states->projection2[vr::Eye_Right], "Projection R");
-	printf("Render %d x %d pixels per Eye", states->HMDRenderSizePerEye[0],
-		states->HMDRenderSizePerEye[1]);
 
 	{
 		states->camera.setHeadPos(
@@ -520,6 +383,15 @@ int main(int argc, char** argv)
 		states->subrgn.fromWorldToSubrgn =
 			Math::inversePose(TRInvT);
 	}
+
+	states->pathManager.addPath();
+
+	Math::printGLMMat4(states->eyeToHMD2[vr::Eye_Left], "HMDToEye L");
+	Math::printGLMMat4(states->eyeToHMD2[vr::Eye_Right], "HMDToEye R");
+	Math::printGLMMat4(states->projection2[vr::Eye_Left], "Projection L");
+	Math::printGLMMat4(states->projection2[vr::Eye_Right], "Projection R");
+	printf("Render %d x %d pixels per Eye\n", states->HMDRenderSizePerEye[0],
+		states->HMDRenderSizePerEye[1]);
 
 	std::array<glm::mat4, 2> VP2;
 	std::array<glm::mat4, 2> gizmoMVP2;
@@ -564,33 +436,37 @@ int main(int argc, char** argv)
 			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-			shaders.depthShader.bind();
+			shaders.depthShader.program.bind();
 			glUniformMatrix4fv(
-				shaders.depthShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
+				shaders.depthShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
 			gizmo.model->draw();
 
 			if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
 			{
 				glUniformMatrix4fv(
-					shaders.depthShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&annotationMVP2[eyeIdx]);
+					shaders.depthShader.matPos, 1, GL_FALSE, (GLfloat*)&annotationMVP2[eyeIdx]);
 				annotationBall.model->draw();
 			}
 
 			VRContext::forHandsDo([&](uint8_t hndIdx) {
 				if (!states->hand2[hndIdx].show) return;
 				glUniformMatrix4fv(
-					shaders.depthShaderMatrixPos, 1, GL_FALSE,
+					shaders.depthShader.matPos, 1, GL_FALSE,
 					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
 				states->hand2[hndIdx].model->draw();
 				});
 
-			shaders.zeroDepthShader.bind();
+			shaders.zeroDepthShader.program.bind();
 			glUniformMatrix4fv(
-				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+				shaders.colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
 			glPointSize(5.f);
 			glBindVertexArray(intrctPoint.VAO);
 			glDrawArrays(GL_POINTS, 0, 1);
 			glBindVertexArray(0);
+
+			states->pathManager.draw(
+				shaders.pathDepthShader.program.programId(),
+				shaders.pathDepthShader.matPos, VP2[eyeIdx]);
 			});
 
 		glEnable(GL_MULTISAMPLE);
@@ -600,20 +476,20 @@ int main(int argc, char** argv)
 			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-			shaders.colorShader.bind();
+			shaders.colorShader.program.bind();
 			glUniformMatrix4fv(
-				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
+				shaders.colorShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
 			gizmo.model->draw();
 
 			if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
 			{
 				glUniformMatrix4fv(
-					shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&annotationMVP2[eyeIdx]);
+					shaders.colorShader.matPos, 1, GL_FALSE, (GLfloat*)&annotationMVP2[eyeIdx]);
 				annotationBall.model->draw();
 			}
 
 			glUniformMatrix4fv(
-				shaders.colorShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+				shaders.colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
 			glPointSize(5.f);
 			glBindVertexArray(intrctPoint.VAO);
 			glDrawArrays(GL_POINTS, 0, 1);
@@ -621,12 +497,17 @@ int main(int argc, char** argv)
 
 			VRContext::forHandsDo([&](uint8_t hndIdx) {
 				if (!states->hand2[hndIdx].show) return;
-				shaders.diffuseShader.bind();
+				shaders.diffuseShader.program.bind();
 				glUniformMatrix4fv(
-					shaders.diffuseShaderMatrixPos, 1, GL_FALSE,
+					shaders.diffuseShader.matPos, 1, GL_FALSE,
 					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
 				states->hand2[hndIdx].model->draw();
 				});
+
+			states->pathManager.draw(
+				shaders.pathColorShader.program.programId(),
+				shaders.pathColorShader.matPos, VP2[eyeIdx],
+				shaders.pathColorShader.colorPos);
 			});
 		
 		{
@@ -637,27 +518,27 @@ int main(int argc, char** argv)
 				up.x, up.y, up.z, 0,
 				-forward.x, -forward.y, -forward.z, 0,
 				0, 0, 0, 1.f);
-			volumeRender.renderer->setCamera(
+			states->renderer->setCamera(
 				{ lftEyePos, rhtEyePos, rotation,
 				states->unProjection2[vr::Eye_Left],states->unProjection2[vr::Eye_Right],
 				states->nearClip, states->farClip });
 		}
 		if (states->subrgnChanged)
 		{
-			volumeRender.renderer->setSubregion(states->subrgn);
+			states->renderer->setSubregion(states->subrgn);
 			states->subrgnChanged = false;
 		}
-		volumeRender.renderer->setInteractionParam(intrctParam);
-		volumeRender.renderer->render(&intrctPoint.pos, states->renderTar);
+		states->renderer->setInteractionParam(intrctParam);
+		states->renderer->render(&states->intrctPos, states->renderTar);
 		glBindBuffer(GL_ARRAY_BUFFER, intrctPoint.VBO);
-		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * 3, &intrctPoint.pos);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * 3, &states->intrctPos);
 
 		glDisable(GL_DEPTH_TEST);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		shaders.diffuseShader.bind();
+		shaders.diffuseShader.program.bind();
 		glUniformMatrix4fv(
-			shaders.diffuseShaderMatrixPos, 1, GL_FALSE, (GLfloat*)&identity);
+			shaders.diffuseShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
 		glBindVertexArray(screenQuad.VAO);
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
 			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);

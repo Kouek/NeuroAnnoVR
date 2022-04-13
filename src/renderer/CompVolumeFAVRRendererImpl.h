@@ -10,6 +10,7 @@ namespace kouek
 		constexpr uint8_t MAX_SUBSAMPLE_LEVEL_NUM = 6;
 		constexpr uint8_t INTER_STAGE_OVERLAP_WIDTH = 10;
 		constexpr uint32_t INTERACTION_SAMPLE_DIM = 100;
+		constexpr float INTERACTION_SAMPLE_SCALAR_LOWER_THRESHOLD = .1f;
 
 		struct FAVRRenderParameter : RenderParameter
 		{

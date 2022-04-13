@@ -1,5 +1,7 @@
 #include "VREventHandler.h"
 
+#include <spdlog/spdlog.h>
+
 static inline glm::mat4 steamVRMat34ToGLMMat4(const vr::HmdMatrix34_t& stMat34)
 {
     return {
@@ -79,10 +81,10 @@ kouek::VREventHandler::VREventHandler(
 	vr::EVRInitError initError;
 	HMD = vr::VR_Init(&initError, vr::VRApplication_Scene);
 	if (initError != vr::VRInitError_None)
-		throw std::exception("VR_Init() FAILED");
+		throw std::runtime_error("VR_Init() FAILED");
 
 	if (!vr::VRCompositor())
-		throw std::exception("VRCompositor() FAILED");
+		throw std::runtime_error("VRCompositor() FAILED");
 
     // HMD->GetRecommendedRenderTargetSize() is too costly
     states->HMDRenderSizePerEye[0] = 1080;
@@ -111,13 +113,13 @@ kouek::VREventHandler::VREventHandler(
 
     if (vr::EVRInputError inputError = vr::VRInput()->SetActionManifestPath(actionsCfgPath.data());
         inputError != vr::VRInputError_None)
-        throw std::exception("VRInput()->SetActionManifestPath FAILED");
+        throw std::runtime_error("VRInput()->SetActionManifestPath FAILED");
 
     auto processInputErr = [](vr::EVRInputError inputErr, int line) {
         if (inputErr == vr::VRInputError_None) return;
         std::string errMsg("VRInput()->GetXXX FAILED, on Line: ");
         errMsg += std::to_string(line);
-        throw std::exception(errMsg.c_str());
+        throw std::runtime_error(errMsg.c_str());
     };
 
 #define PROCESS_ERR(func) processInputErr(func, __LINE__)
@@ -153,6 +155,7 @@ kouek::VREventHandler::~VREventHandler()
 
 void kouek::VREventHandler::update()
 {
+    // handle HMD pose changed
     {
         vr::TrackedDevicePose_t trackedDevicePoses[vr::k_unMaxTrackedDeviceCount];
         vr::VRCompositor()->WaitGetPoses(trackedDevicePoses, vr::k_unMaxTrackedDeviceCount, NULL, 0);
@@ -164,8 +167,8 @@ void kouek::VREventHandler::update()
                         trackedDevicePoses[devIdx].mDeviceToAbsoluteTracking);
             }
         }
+        states->camera.setSelfRotation(states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd]);
     }
-    states->camera.setSelfRotation(states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd]);
     auto& HMDPose = states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
 
     // hanlde hand pose changed
@@ -215,7 +218,6 @@ void kouek::VREventHandler::update()
     // digital action
     {
         vr::InputDigitalActionData_t actionData;
-
         // handle left trackpad
         {
             std::array<float, 3> moveSteps = { 0 };
@@ -228,6 +230,20 @@ void kouek::VREventHandler::update()
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadEClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
             if (actionData.bActive && actionData.bState) moveSteps[0] = +AppStates::moveSensity;
             states->camera.move(moveSteps[0], moveSteps[1], moveSteps[2]);
+        }
+
+        // handle right trigger
+        vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bState && actionData.bChanged)
+        {
+            try
+            {
+                states->pathManager.addVertex(states->intrctPos);
+            }
+            catch (std::exception& e)
+            {
+                spdlog::info("{0}", e.what());
+            }
         }
     }
 }

@@ -8,6 +8,8 @@
 
 #include <json.hpp>
 
+#include <VolumeSlicer/transfer_function.hpp>
+
 namespace kouek
 {
 	class VolumeConfig
@@ -17,6 +19,8 @@ namespace kouek
 		float baseSpace;
 		std::string resourcePath;
 		nlohmann::json json;
+
+		vs::TransferFunc tf;
 
 	public:
 		/// <summary>
@@ -36,20 +40,34 @@ namespace kouek
 				in >> json;
 				in.close();
 
-				auto spaces = json.at("space");
-				spaceX = spaces[0];
-				spaceY = spaces[1];
-				spaceZ = spaces[2];
+				auto jsonItem = json.at("space");
+				spaceX = jsonItem[0];
+				spaceY = jsonItem[1];
+				spaceZ = jsonItem[2];
 				baseSpace = min({ spaceX, spaceY, spaceZ });
 
-				auto screenJson = json.at("screen").at("0");
-				resourcePath = screenJson.at("resourcePath");
+				jsonItem = json.at("screen").at("0");
+				resourcePath = jsonItem.at("resourcePath");
+
+				jsonItem = json.at("tf");
+				for (auto& [tfPnt, tfCol] : jsonItem.items())
+				{
+					tf.points.emplace_back((uint8_t)stoi(tfPnt),
+						std::array<double, 4>{tfCol[0], tfCol[1], tfCol[2], tfCol[3]});
+				}
 			}
 			catch (json::parse_error& e)
 			{
-				throw runtime_error("Problem occurs at byte: " + std::to_string(e.byte) + ". Problem is: " + e.what());
+				throw runtime_error("Problem occurs at byte: "
+					+ std::to_string(e.byte)
+					+ ". Problem is: " + e.what());
 			}
 		}
+		const vs::TransferFunc& getTF() const
+		{
+			return tf;
+		}
+
 #define GETTER(retType, firstChInLowerCase, firstChInUpperCase, successor)                                             \
     retType get##firstChInUpperCase##successor() const                                                                 \
     {                                                                                                                  \

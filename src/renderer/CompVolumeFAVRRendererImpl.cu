@@ -23,7 +23,8 @@ cudaTextureObject_t d_preIntTF;
 __constant__ cudaTextureObject_t dc_preIntTransferFunc;
 
 uint32_t* d_mappingTable = nullptr;
-__constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
+__constant__ size_t dc_mappingTableSize = 0;
+__constant__ glm::uvec4* dc_mappingTableStride4 = nullptr;
 
 static bool sbsmplLvlChanged = true;
 cudaArray_t d_sbsmplTexArrs[MAX_SUBSAMPLE_LEVEL_NUM] = { nullptr };
@@ -122,8 +123,10 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::uploadMappingTable(const uint32_t*
 		cudaMalloc(&d_mappingTable, size);
 		// cpy uint32_t ptr to uint4 ptr
 		CUDA_RUNTIME_API_CALL(
-			cudaMemcpyToSymbol(d_mappingTableStride4, &d_mappingTable, sizeof(glm::uvec4*)));
+			cudaMemcpyToSymbol(dc_mappingTableStride4, &d_mappingTable, sizeof(glm::uvec4*)));
 	}
+	CUDA_RUNTIME_API_CALL(
+		cudaMemcpyToSymbol(dc_mappingTableSize, &size, sizeof(size_t)));
 	CUDA_RUNTIME_API_CALL(
 		cudaMemcpy(d_mappingTable, hostMemDat, size, cudaMemcpyHostToDevice));
 }
@@ -419,7 +422,8 @@ __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 			+ vsBlockIdx.z * dc_compVolumeParam.LOD0BlockDim.y * dc_compVolumeParam.LOD0BlockDim.x
 			+ vsBlockIdx.y * dc_compVolumeParam.LOD0BlockDim.x
 			+ vsBlockIdx.x;
-		GPUMemBlockIdx = d_mappingTableStride4[flatVSBlockIdx];
+		if (flatVSBlockIdx >= dc_mappingTableSize) return 0;
+		GPUMemBlockIdx = dc_mappingTableStride4[flatVSBlockIdx];
 	}
 
 	if (((GPUMemBlockIdx.w >> 16) & (0x0000ffff)) != 1)
@@ -1034,8 +1038,9 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 		cudaMemcpy(intrctPossInX, d_intrctPossInX,
 			sizeof(PosWithScalar) * INTERACTION_SAMPLE_DIM, cudaMemcpyDeviceToHost);
 		float maxScalar = 0;
-		for (uint32_t x =0;x < INTERACTION_SAMPLE_DIM;++x)
-			if (intrctPossInX[x].scalar > maxScalar)
+		for (uint32_t x = 0; x < INTERACTION_SAMPLE_DIM; ++x)
+			if (intrctPossInX[x].scalar > maxScalar
+				&& intrctPossInX[x].scalar > INTERACTION_SAMPLE_SCALAR_LOWER_THRESHOLD)
 			{
 				maxScalar = intrctPossInX[x].scalar;
 				*intrctPos = intrctPossInX[x].pos;

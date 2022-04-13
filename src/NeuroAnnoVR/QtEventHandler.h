@@ -4,6 +4,9 @@
 #include "EventHandler.h"
 #include "EditorWindow.h"
 
+#include <CMakeIn.h>
+#include <util/VolumeCfg.h>
+
 namespace kouek
 {
 	class QtEventHandler : public EventHandler
@@ -20,6 +23,10 @@ namespace kouek
 		{
 			QObject::connect(sender, &EditorWindow::closed, [&]() {
 				states->canRun = false;
+				});
+			QObject::connect(sender, &EditorWindow::reloadTFBtnClicked, [&]() {
+				kouek::VolumeConfig cfg(std::string(kouek::PROJECT_SOURCE_DIR) + "/cfg/VolumeCfg.json");
+				states->renderer->setTransferFunc(cfg.getTF());
 				});
 			auto increaseRenderTar = [](CompVolumeFAVRRenderer::RenderTarget& renderTar) {
 				uint8_t idx = static_cast<uint8_t>(renderTar) + 1;

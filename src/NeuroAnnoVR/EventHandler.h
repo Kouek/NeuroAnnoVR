@@ -8,13 +8,14 @@
 
 #include <camera/DualEyeCamera.h>
 #include <util/Math.h>
+#include <util/RednerPath.h>
 
 namespace kouek
 {
 	struct Hand
 	{
 		bool show = false;
-		glm::mat4 transform;
+		glm::mat4 transform = glm::identity<glm::mat4>();
 		std::unique_ptr<VRRenderModel> model;
 		std::string modelName;
 	};
@@ -26,16 +27,19 @@ namespace kouek
 
 		bool canRun = true, canVRRun = true;
 		bool subrgnChanged = true;
+		float nearClip = 0.01f, farClip = 10.f;
 		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
+		glm::vec3 intrctPos;
 		std::array<uint32_t, 2> HMDRenderSizePerEye = { 1080,1080 };
 		std::array<glm::mat4, vr::k_unMaxTrackedDeviceCount> devicePoses;
-		float nearClip = 0.01f, farClip = 10.f;
 		std::array<glm::mat4, 2> projection2;
 		std::array<glm::mat4, 2> unProjection2;
 		std::array<glm::mat4, 2> eyeToHMD2;
+		std::unique_ptr<kouek::CompVolumeFAVRRenderer> renderer;
 		DualEyeCamera camera;
 		CompVolumeRenderer::Subregion subrgn;
 		Hand hand2[2];
+		RenderPathManager pathManager;
 
 		AppStates()
 		{

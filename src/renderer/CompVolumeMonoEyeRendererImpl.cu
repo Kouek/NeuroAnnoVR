@@ -23,7 +23,7 @@ cudaTextureObject_t d_preIntTF;
 __constant__ cudaTextureObject_t dc_preIntTransferFunc;
 
 uint32_t* d_mappingTable = nullptr;
-__constant__ glm::uvec4* d_mappingTableStride4 = nullptr;
+__constant__ glm::uvec4* dc_mappingTableStride4 = nullptr;
 
 cudaGraphicsResource_t outColorTexRsc = nullptr, inDepthTexRsc = nullptr;
 glm::u8vec4* d_color = nullptr;
@@ -98,7 +98,7 @@ void kouek::CompVolumeRendererCUDA::MonoEyeFunc::uploadMappingTable(const uint32
 		cudaMalloc(&d_mappingTable, size);
 		// cpy uint32_t ptr to uint4 ptr
 		CUDA_RUNTIME_API_CALL(
-			cudaMemcpyToSymbol(d_mappingTableStride4, &d_mappingTable, sizeof(glm::uvec4*)));
+			cudaMemcpyToSymbol(dc_mappingTableStride4, &d_mappingTable, sizeof(glm::uvec4*)));
 	}
 	CUDA_RUNTIME_API_CALL(
 		cudaMemcpy(d_mappingTable, hostMemDat, size, cudaMemcpyHostToDevice));
@@ -153,7 +153,7 @@ __device__ float virtualSampleLOD0(const glm::vec3& samplePos)
 			+ vsBlockIdx.z * dc_compVolumeParam.LOD0BlockDim.y * dc_compVolumeParam.LOD0BlockDim.x
 			+ vsBlockIdx.y * dc_compVolumeParam.LOD0BlockDim.x
 			+ vsBlockIdx.x;
-		GPUMemBlockIdx = d_mappingTableStride4[flatVSBlockIdx];
+		GPUMemBlockIdx = dc_mappingTableStride4[flatVSBlockIdx];
 	}
 
 	if (((GPUMemBlockIdx.w >> 16) & (0x0000ffff)) != 1)
