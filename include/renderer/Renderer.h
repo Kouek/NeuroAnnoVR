@@ -115,7 +115,7 @@ namespace kouek
 				}ball;
 			}dat;
 		};
-		virtual void setInteractionParam(const InteractionParameter intrctParam) = 0;
+		virtual void setInteractionParam(const InteractionParameter& intrctParam) = 0;
 		virtual void render() = 0;
 		virtual void render(glm::vec3* intrctPos, RenderTarget renderTar) = 0;
 	};

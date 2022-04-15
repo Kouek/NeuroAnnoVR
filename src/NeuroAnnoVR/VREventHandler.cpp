@@ -235,15 +235,25 @@ void kouek::VREventHandler::update()
         // handle right trigger
         vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bState && actionData.bChanged)
+            handleRightHandTrigger();
+    }
+}
+
+void kouek::VREventHandler::handleRightHandTrigger()
+{
+    try
+    {
+        switch (states->game.intrctActMode)
         {
-            try
-            {
-                states->pathManager.addVertex(states->intrctPos);
-            }
-            catch (std::exception& e)
-            {
-                spdlog::info("{0}", e.what());
-            }
+        case InteractionActionMode::AddVertex:
+            states->pathManager->addVertex(states->game.intrctPos);
+            break;
+        default:
+            break;
         }
+    }
+    catch (std::exception& e)
+    {
+        spdlog::info("{0}", e.what());
     }
 }

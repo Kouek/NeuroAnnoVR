@@ -243,6 +243,7 @@ __global__ void createSubsampleTexKernel(glm::vec4* d_sbsmpl)
 
 	float centerY, hfSbsmplW;
 	centerY = hfSbsmplW = .5f * dc_renderParam.sbsmplSize.x;
+	float hfWindowWid = .5f * dc_renderParam.windowSize.x;
 	float x, y, radSqr, scale;
 
 	for (uint8_t stage = 0;
@@ -256,15 +257,15 @@ __global__ void createSubsampleTexKernel(glm::vec4* d_sbsmpl)
 		radSqr = x * x + y * y;
 
 		scale = 1.f - (float)stage / dc_renderParam.sbsmplLvl;
-		x = x / scale / dc_renderParam.windowSize.x + .5f;
-		y = y / scale / dc_renderParam.windowSize.x + .5f;
+		x = x / scale + hfWindowWid;
+		y = y / scale + hfWindowWid;
 
 		scale *= scale;
 		if (radSqr >= dc_sbsmplRadSqrs[stage] * scale
 			&& radSqr < dc_sbsmplRadSqrs[stage + 1] * scale)
 		{
-			d_sbsmpl[texFlatIdx].x = __saturatef(x);
-			d_sbsmpl[texFlatIdx].y = __saturatef(y);
+			d_sbsmpl[texFlatIdx].x = x;
+			d_sbsmpl[texFlatIdx].y = y;
 			d_sbsmpl[texFlatIdx].z = 0;
 			d_sbsmpl[texFlatIdx].w = 1.f;
 		}
@@ -615,7 +616,7 @@ __global__ void renderKernel(
 
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = dc_renderParam.camPos2[blockIdx.z];
-	const glm::mat4 unProjection = dc_renderParam.unProjection2[blockIdx.z];
+	const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
@@ -757,9 +758,11 @@ __global__ void testSubsampleTexKernel(
 	glm::u8vec4& d_color = blockIdx.z == 0 ?
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 sbsmplTexVal = tex2D<float4>(dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX,
-		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.sbsmplSize.y);
-	d_color = rgbaFloatToUbyte4(sbsmplTexVal.x, sbsmplTexVal.y, sbsmplTexVal.z, 1.f);
+		(float)windowX, (float)windowY);
+	d_color = rgbaFloatToUbyte4(
+		sbsmplTexVal.x / dc_renderParam.windowSize.x,
+		sbsmplTexVal.y / dc_renderParam.windowSize.x,
+		sbsmplTexVal.z, 1.f);
 }
 
 __global__ void subsampleKernel(
@@ -782,7 +785,6 @@ __global__ void subsampleKernel(
 		dc_renderParam.lightParam.bkgrndColor.a);
 
 	// sample the original Window Pos
-	glm::vec2 oriWindow;
 	float4 sbsmplTexVal = tex2D<float4>(
 		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
 		(float)windowX, (float)windowY);
@@ -792,21 +794,19 @@ __global__ void subsampleKernel(
 		return;
 	}
 
-	oriWindow.x = sbsmplTexVal.x * dc_renderParam.windowSize.x;
-	oriWindow.y = sbsmplTexVal.y * dc_renderParam.windowSize.y;
-	if (oriWindow.x >= dc_renderParam.windowSize.x
-		|| oriWindow.y >= dc_renderParam.windowSize.y) return;
+	if (sbsmplTexVal.x >= dc_renderParam.windowSize.x
+		|| sbsmplTexVal.y >= dc_renderParam.windowSize.y) return;
 
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = dc_renderParam.camPos2[blockIdx.z];
-	const glm::mat4 unProjection = dc_renderParam.unProjection2[blockIdx.z];
+	const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
 		//   unproject
 		glm::vec4 v41 = unProjection * glm::vec4{
-			(sbsmplTexVal.x - .5f) * 2.f,
-			(sbsmplTexVal.y - .5f) * 2.f,
+			((sbsmplTexVal.x / dc_renderParam.windowSize.x) - .5f) * 2.f,
+			((sbsmplTexVal.y / dc_renderParam.windowSize.y) - .5f) * 2.f,
 			1.f, 1.f };
 		//   don't rotate first to compute the Near&Far-clip steps
 		rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
@@ -819,7 +819,7 @@ __global__ void subsampleKernel(
 		{
 			uchar4 depth4 = tex2D<uchar4>(
 				blockIdx.z == 0 ? d_depthTexL : d_depthTexR,
-				oriWindow.x, oriWindow.y);
+				sbsmplTexVal.x, sbsmplTexVal.y);
 			float meshBoundDep = dc_renderParam.projection23 /
 				((depth4.x / 255.f * 2.f - 1.f) + dc_renderParam.projection22);
 			if (tFarClip > meshBoundDep)
@@ -923,8 +923,7 @@ __global__ void testSubsampleKernel(
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 sbsmplVal = tex2D<float4>(
 		dc_sbsmplColorTex2[blockIdx.z],
-		(float)windowX,
-		(float)windowY);
+		(float)windowX, (float)windowY);
 	d_color = rgbaFloatToUbyte4(sbsmplVal.x, sbsmplVal.y, sbsmplVal.z, 1.f);
 }
 
@@ -940,8 +939,7 @@ __global__ void testReconstructionTexKernel(
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 reconsTexVal = tex2D<float4>(
 		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX,
-		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.windowSize.x);
+		(float)windowX, (float)windowY);
 	d_color = rgbaFloatToUbyte4(
 		reconsTexVal.x / dc_renderParam.sbsmplSize.x,
 		reconsTexVal.y / dc_renderParam.sbsmplSize.y,
@@ -960,12 +958,14 @@ __global__ void testReconstructionKernel(
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 reconsTexVal = tex2D<float4>(
 		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX,
-		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.windowSize.x);
+		(float)windowX, (float)windowY);
 	float4 sbsmplTexVal = tex2D<float4>(
 		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
 		reconsTexVal.x, reconsTexVal.y);
-	d_color = rgbaFloatToUbyte4(sbsmplTexVal.x, sbsmplTexVal.y, sbsmplTexVal.z, 1.f);
+	glm::vec2 diff = { sbsmplTexVal.x - (float)windowX,
+		sbsmplTexVal.y - (float)windowY};
+	diff = glm::abs(diff);
+	d_color = rgbaFloatToUbyte4(diff.r, diff.g, 0, 1.f);
 }
 
 __global__ void reconstructionKernel(
@@ -980,8 +980,7 @@ __global__ void reconstructionKernel(
 		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
 	float4 reconsTexVal = tex2D<float4>(
 		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
-		(float)windowX,
-		(float)windowY / dc_renderParam.windowSize.y * dc_renderParam.windowSize.x);
+		(float)windowX, (float)windowY);
 	float4 sbsmplVal = tex2D<float4>(
 		dc_sbsmplColorTex2[blockIdx.z],
 		reconsTexVal.x, reconsTexVal.y);

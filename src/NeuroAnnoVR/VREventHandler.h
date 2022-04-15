@@ -37,6 +37,9 @@ namespace kouek
 			std::shared_ptr<AppStates> sharedStates);
 		~VREventHandler();
 		void update() override;
+
+    private:
+        void handleRightHandTrigger();
 	};
 }
 

@@ -12,6 +12,10 @@
 
 namespace kouek
 {
+	constexpr float ANNO_BALL_RADIUS = .02f;
+	constexpr float ANNO_BALL_DIAMETER = 2 * ANNO_BALL_RADIUS;
+	constexpr float ANNO_BALL_DIST_FROM_HAND = ANNO_BALL_DIAMETER * 2;
+
 	struct Hand
 	{
 		bool show = false;
@@ -20,26 +24,54 @@ namespace kouek
 		std::string modelName;
 	};
 
+	enum class GameMode : uint8_t
+	{
+		Focus = 0,
+		Wander
+	};
+
+	enum class InteractionActionMode : uint8_t
+	{
+		SelectVertex = 0,
+		AddVertex,
+		DeleteVertex,
+		SplitVertex,
+		JoinPath
+	};
+
+	struct Game
+	{
+		GameMode gameMode = GameMode::Wander;
+		InteractionActionMode intrctActMode = InteractionActionMode::SelectVertex;
+		glm::vec3 intrctPos;
+		CompVolumeFAVRRenderer::InteractionParameter intrctParam;
+
+		Game() {
+			intrctParam.mode = CompVolumeFAVRRenderer::InteractionMode::AnnotationBall;
+			intrctParam.dat.ball.AABBSize = glm::vec3{ ANNO_BALL_DIAMETER };
+		}
+	};
+
 	struct AppStates
 	{
 		static inline float moveSensity = .1f;
 		static inline float subrgnMoveSensity = .1f;
 
 		bool canRun = true, canVRRun = true;
-		bool subrgnChanged = true;
 		float nearClip = 0.01f, farClip = 10.f;
 		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
-		glm::vec3 intrctPos;
 		std::array<uint32_t, 2> HMDRenderSizePerEye = { 1080,1080 };
 		std::array<glm::mat4, vr::k_unMaxTrackedDeviceCount> devicePoses;
 		std::array<glm::mat4, 2> projection2;
 		std::array<glm::mat4, 2> unProjection2;
 		std::array<glm::mat4, 2> eyeToHMD2;
-		std::unique_ptr<kouek::CompVolumeFAVRRenderer> renderer;
 		DualEyeCamera camera;
 		CompVolumeRenderer::Subregion subrgn;
 		Hand hand2[2];
-		RenderPathManager pathManager;
+		Game game;
+
+		CompVolumeFAVRRenderer* renderer = nullptr;
+		RenderPathManager* pathManager = nullptr;
 
 		AppStates()
 		{
@@ -64,7 +96,7 @@ namespace kouek
 					-eyeToHMD2[vr::Eye_Right][3][1],
 					-eyeToHMD2[vr::Eye_Right][3][2] };
 				camera.setEyeToHead(lftToHead, rhtToHead);
-			}	
+			}
 		}
 	};
 

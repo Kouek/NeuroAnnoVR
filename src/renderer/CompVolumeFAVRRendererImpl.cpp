@@ -61,7 +61,7 @@ void kouek::CompVolumeFAVRRendererImpl::setCamera(const CameraParameter& camPara
 }
 
 void kouek::CompVolumeFAVRRendererImpl::setInteractionParam(
-	const InteractionParameter intrctParam)
+	const InteractionParameter& intrctParam)
 {
 	FAVRRenderParam->intrctParam = intrctParam;
 }

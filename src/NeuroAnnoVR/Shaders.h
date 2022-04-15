@@ -41,6 +41,7 @@ namespace kouek
 
 		Shaders()
 		{
+			// depthShader
 			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
@@ -68,6 +69,7 @@ namespace kouek
 				depthShader.matPos = depthShader.program.uniformLocation("matrix");
 				assert(depthShader.matPos != -1);
 			}
+			// zeroDepthShader
 			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
@@ -95,6 +97,7 @@ namespace kouek
 				zeroDepthShader.matPos = depthShader.program.uniformLocation("matrix");
 				assert(zeroDepthShader.matPos != -1);
 			}
+			// pathDepthShader
 			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
@@ -121,6 +124,7 @@ namespace kouek
 				pathDepthShader.matPos = pathDepthShader.program.uniformLocation("matrix");
 				assert(pathDepthShader.matPos != -1);
 			}
+			// colorShader
 			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
@@ -151,6 +155,7 @@ namespace kouek
 				colorShader.matPos = colorShader.program.uniformLocation("matrix");
 				assert(colorShader.matPos != -1);
 			}
+			// pathColorShader
 			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
@@ -166,7 +171,7 @@ namespace kouek
 					"out vec4 outputColor;\n"
 					"void main()\n"
 					"{\n"
-					"    outputColor = vec4(color, 1.0);\n"
+					"    outputColor = vec4(color, 0.5);\n"
 					"}\n";
 				pathColorShader.program.addShaderFromSourceCode(
 					QOpenGLShader::Vertex, vertShaderCode);
@@ -180,6 +185,7 @@ namespace kouek
 				pathColorShader.colorPos = pathColorShader.program.uniformLocation("color");
 				assert(pathColorShader.colorPos != -1);
 			}
+			// diffuseShader
 			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
@@ -212,6 +218,35 @@ namespace kouek
 				diffuseShader.matPos = diffuseShader.program.uniformLocation("matrix");
 				assert(diffuseShader.matPos != -1);
 			}
+			/*{
+				const char* vertShaderCode =
+					"#version 410 core\n"
+					"uniform mat4 matrix;\n"
+					"uniform vec3 center;\n"
+					"layout(location = 0) in vec3 position;\n"
+					"layout(location = 1) in vec3 v3ColorIn;\n"
+					"out int id;\n"
+					"void main()\n"
+					"{\n"
+					"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
+					"}\n";
+				const char* fragShaderCode =
+					"#version 410 core\n"
+					"out vec4 outputColor;\n"
+					"void main()\n"
+					"{\n"
+					"    outputColor = vec4(vec3(gl_FragCoord.z), 1.0);\n"
+					"}\n";
+				depthShader.program.addShaderFromSourceCode(
+					QOpenGLShader::Vertex, vertShaderCode);
+				depthShader.program.addShaderFromSourceCode(
+					QOpenGLShader::Fragment, fragShaderCode);
+				depthShader.program.link();
+				assert(depthShader.program.isLinked());
+
+				depthShader.matPos = depthShader.program.uniformLocation("matrix");
+				assert(depthShader.matPos != -1);
+			}*/
 		}
 	};
 }

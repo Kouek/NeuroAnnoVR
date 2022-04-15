@@ -67,6 +67,14 @@ namespace kouek
 						subrgnMoveSteps[0] = +AppStates::moveSensity; break;
 					case Qt::Key_A:
 						subrgnMoveSteps[0] = -AppStates::moveSensity; break;
+					case Qt::Key_1:
+					case Qt::Key_2:
+					case Qt::Key_3:
+					case Qt::Key_4:
+					case Qt::Key_5:
+						states->game.intrctActMode = static_cast<
+							InteractionActionMode>(key - Qt::Key_1);
+						break;
 					}
 				});
 		}
@@ -81,8 +89,8 @@ namespace kouek
 			{
 				states->subrgn.center += glm::vec3(subrgnMoveSteps[0],
 					subrgnMoveSteps[1], subrgnMoveSteps[2]);
+				states->renderer->setSubregion(states->subrgn);
 				subrgnMoveSteps = { 0 };
-				states->subrgnChanged = true;
 			}
 		}
 	};

@@ -67,7 +67,7 @@ namespace kouek
 		void unregisterGLResource() override;
 
 		void setCamera(const CameraParameter& camParam) override;
-		void setInteractionParam(const InteractionParameter intrctParam) override;
+		void setInteractionParam(const InteractionParameter& intrctParam) override;
 		void render() override
 		{
 			render(nullptr, static_cast<RenderTarget>(0));
