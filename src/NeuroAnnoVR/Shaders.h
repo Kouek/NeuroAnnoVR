@@ -38,6 +38,11 @@ namespace kouek
 			GLint matPos;
 			QOpenGLShaderProgram program;
 		}diffuseShader;
+		struct
+		{
+			GLint matPos;
+			QOpenGLShaderProgram program;
+		}pathSelectShader;
 
 		Shaders()
 		{
@@ -103,6 +108,7 @@ namespace kouek
 					"#version 410 core\n"
 					"uniform mat4 matrix;\n"
 					"layout(location = 0) in vec3 position;\n"
+					"layout(location = 1) in uint id;\n"
 					"void main()\n"
 					"{\n"
 					"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
@@ -161,6 +167,7 @@ namespace kouek
 					"#version 410 core\n"
 					"uniform mat4 matrix;\n"
 					"layout(location = 0) in vec3 position;\n"
+					"layout(location = 1) in uint id;\n"
 					"void main()\n"
 					"{\n"
 					"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
@@ -218,35 +225,40 @@ namespace kouek
 				diffuseShader.matPos = diffuseShader.program.uniformLocation("matrix");
 				assert(diffuseShader.matPos != -1);
 			}
-			/*{
+			// pathSelectShader
+			{
 				const char* vertShaderCode =
 					"#version 410 core\n"
 					"uniform mat4 matrix;\n"
-					"uniform vec3 center;\n"
 					"layout(location = 0) in vec3 position;\n"
-					"layout(location = 1) in vec3 v3ColorIn;\n"
-					"out int id;\n"
+					"layout(location = 1) in uint id;\n"
+					"flat out vec4 id3;\n"
 					"void main()\n"
 					"{\n"
 					"	gl_Position = matrix * vec4(position.xyz, 1.0);\n"
+					"	id3.r = float((id & 0x000000ff) >> 0) / 255.0;\n"
+					"	id3.g = float((id & 0x0000ff00) >> 8) / 255.0;\n"
+					"	id3.b = float((id & 0x00ff0000) >> 16) / 255.0;\n"
+					"	id3.a = float((id & 0xff000000) >> 24) / 255.0;\n"
 					"}\n";
 				const char* fragShaderCode =
 					"#version 410 core\n"
-					"out vec4 outputColor;\n"
+					"flat in vec4 id3;\n"
+					"out vec4 outputID3;\n"
 					"void main()\n"
 					"{\n"
-					"    outputColor = vec4(vec3(gl_FragCoord.z), 1.0);\n"
+					"	outputID3 = id3;\n"
 					"}\n";
-				depthShader.program.addShaderFromSourceCode(
+				pathSelectShader.program.addShaderFromSourceCode(
 					QOpenGLShader::Vertex, vertShaderCode);
-				depthShader.program.addShaderFromSourceCode(
+				pathSelectShader.program.addShaderFromSourceCode(
 					QOpenGLShader::Fragment, fragShaderCode);
-				depthShader.program.link();
-				assert(depthShader.program.isLinked());
+				pathSelectShader.program.link();
+				assert(pathSelectShader.program.isLinked());
 
-				depthShader.matPos = depthShader.program.uniformLocation("matrix");
-				assert(depthShader.matPos != -1);
-			}*/
+				pathSelectShader.matPos = pathSelectShader.program.uniformLocation("matrix");
+				assert(pathSelectShader.matPos != -1);
+			}
 		}
 	};
 }

@@ -39,7 +39,8 @@ namespace kouek
 		void update() override;
 
     private:
-        void handleRightHandTrigger();
+        inline void onRightHandTriggerActed(
+            const vr::InputDigitalActionData_t& actionDat);
 	};
 }
 

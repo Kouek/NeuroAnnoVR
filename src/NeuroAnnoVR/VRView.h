@@ -33,13 +33,14 @@ namespace kouek
 		}
 
 	signals:
-		void keyPressed(int key);
+		void keyPressed(int key, int functionKey);
 
 	protected:
 		void initializeGL() override;
 		void paintGL() override;
 
 		void keyPressEvent(QKeyEvent* e) override;
+		void keyReleaseEvent(QKeyEvent* e) override;
 	};
 }
 

@@ -31,10 +31,27 @@ void kouek::VRView::paintGL()
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
 
-#include <camera/FPSCamera.h>
-#include <util/Math.h>
-
+static int functionKey = -1;
 void kouek::VRView::keyPressEvent(QKeyEvent* e)
 {
-	emit keyPressed(e->key());
+	switch (e->key())
+	{
+	case Qt::Key_Control:
+		functionKey = Qt::Key_Control; break;
+	case Qt::Key_Shift:
+		functionKey = Qt::Key_Shift; break;
+	default:
+		emit keyPressed(e->key(), functionKey);
+	}
+}
+
+void kouek::VRView::keyReleaseEvent(QKeyEvent* e)
+{
+	switch (e->key())
+	{
+	case Qt::Key_Control:
+	case Qt::Key_Shift:
+		functionKey = -1;
+		break;
+	}
 }

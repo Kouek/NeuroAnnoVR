@@ -90,7 +90,7 @@ namespace kouek
             glGenBuffers(1, &VBO);
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             {
-                GLfloat verts[] = { 0.f, 0.f, 0.f,	1.f, .5f, 1.f };
+                GLfloat verts[] = { 0.f, 0.f, 0.f,	1.f, 1.f, 1.f };
                 glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
 
                 glEnableVertexAttribArray(0);
@@ -111,6 +111,13 @@ namespace kouek
         {
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * 3, &pos);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+        void setColorData(const glm::vec3& col)
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, VBO);
+            glBufferSubData(GL_ARRAY_BUFFER, sizeof(GLfloat) * 3,
+                sizeof(GLfloat) * 3, &col);
             glBindBuffer(GL_ARRAY_BUFFER, 0);
         }
         void draw()

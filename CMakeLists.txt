@@ -69,6 +69,9 @@ include("${THIRDPARTY_DIR}/glm.cmake")
 # VolumeCompression dep
 include("${THIRDPARTY_DIR}/VolumeCompression.cmake")
 
+# GLPathRenderer dep
+
+
 # Utils
 include("${THIRDPARTY_DIR}/spdlog.cmake")
 include_directories("${THIRDPARTY_DIR}/glad/include")

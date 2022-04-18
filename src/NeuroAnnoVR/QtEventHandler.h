@@ -44,7 +44,7 @@ namespace kouek
 				renderTar = static_cast<CompVolumeFAVRRenderer::RenderTarget>(idx);
 			};
 			QObject::connect(sender->getVRView(), &VRView::keyPressed,
-				[&](int key) {
+				[&](int key, int functionKey) {
 					switch (key)
 					{
 					case Qt::Key_Plus:
@@ -52,29 +52,37 @@ namespace kouek
 					case Qt::Key_Minus:
 						decreaseRenderTar(states->renderTar); break;
 					case Qt::Key_Up:
-						moveSteps[2] = +AppStates::moveSensity; break;
+						moveSteps[2] = +AppStates::moveSensity;
+						break;
 					case Qt::Key_Down:
-						moveSteps[2] = -AppStates::moveSensity; break;
+						moveSteps[2] = -AppStates::moveSensity;
+						break;
 					case Qt::Key_Right:
 						moveSteps[0] = +AppStates::moveSensity; break;
 					case Qt::Key_Left:
 						moveSteps[0] = -AppStates::moveSensity; break;
 					case Qt::Key_W:
-						subrgnMoveSteps[2] = +AppStates::moveSensity; break;
+						if (functionKey == Qt::Key_Control)
+							subrgnMoveSteps[1] = +AppStates::moveSensity;
+						else
+							subrgnMoveSteps[2] = +AppStates::moveSensity;
+						break;
 					case Qt::Key_S:
-						subrgnMoveSteps[2] = -AppStates::moveSensity; break;
+						if (functionKey == Qt::Key_Control)
+							subrgnMoveSteps[1] = -AppStates::moveSensity;
+						else
+							subrgnMoveSteps[2] = -AppStates::moveSensity;
+						break;
 					case Qt::Key_D:
 						subrgnMoveSteps[0] = +AppStates::moveSensity; break;
 					case Qt::Key_A:
 						subrgnMoveSteps[0] = -AppStates::moveSensity; break;
 					case Qt::Key_1:
+						states->game.intrctActMode = InteractionActionMode::SelectVertex; break;
 					case Qt::Key_2:
+						states->game.intrctActMode = InteractionActionMode::AddPath; break;
 					case Qt::Key_3:
-					case Qt::Key_4:
-					case Qt::Key_5:
-						states->game.intrctActMode = static_cast<
-							InteractionActionMode>(key - Qt::Key_1);
-						break;
+						states->game.intrctActMode = InteractionActionMode::AddVertex; break;
 					}
 				});
 		}

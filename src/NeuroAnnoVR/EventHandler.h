@@ -8,11 +8,11 @@
 
 #include <camera/DualEyeCamera.h>
 #include <util/Math.h>
-#include <util/RednerPath.h>
+#include <util/GLPathRenderer.h>
 
 namespace kouek
 {
-	constexpr float ANNO_BALL_RADIUS = .02f;
+	constexpr float ANNO_BALL_RADIUS = .01f;
 	constexpr float ANNO_BALL_DIAMETER = 2 * ANNO_BALL_RADIUS;
 	constexpr float ANNO_BALL_DIST_FROM_HAND = ANNO_BALL_DIAMETER * 2;
 
@@ -30,13 +30,14 @@ namespace kouek
 		Wander
 	};
 
-	enum class InteractionActionMode : uint8_t
+	enum class InteractionActionMode : uint32_t
 	{
-		SelectVertex = 0,
-		AddVertex,
-		DeleteVertex,
-		SplitVertex,
-		JoinPath
+		SelectVertex = 0x0,
+		AddPath = 0x1,
+		AddVertex = 0x2,
+		DeleteVertex = 0x4,
+		SplitSubpath = 0x8,
+		JoinPath = 0xC
 	};
 
 	struct Game
@@ -56,6 +57,7 @@ namespace kouek
 	{
 		static inline float moveSensity = .1f;
 		static inline float subrgnMoveSensity = .1f;
+		static inline float minDistSqrBtwnVerts = .008f;
 
 		bool canRun = true, canVRRun = true;
 		float nearClip = 0.01f, farClip = 10.f;
@@ -71,7 +73,7 @@ namespace kouek
 		Game game;
 
 		CompVolumeFAVRRenderer* renderer = nullptr;
-		RenderPathManager* pathManager = nullptr;
+		GLPathRenderer* pathRenderer = nullptr;
 
 		AppStates()
 		{

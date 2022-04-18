@@ -234,26 +234,57 @@ void kouek::VREventHandler::update()
 
         // handle right trigger
         vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-        if (actionData.bActive && actionData.bState && actionData.bChanged)
-            handleRightHandTrigger();
+        onRightHandTriggerActed(actionData);
     }
 }
 
-void kouek::VREventHandler::handleRightHandTrigger()
+void kouek::VREventHandler::onRightHandTriggerActed(
+    const vr::InputDigitalActionData_t& actionDat)
 {
-    try
-    {
-        switch (states->game.intrctActMode)
+    if (!actionDat.bActive) return;
+    static bool pressed = false;
+    static glm::vec3 lastPos;
+    auto canAddVertex = [&](const glm::vec3& pos) -> bool {
+        glm::vec3 diff = states->game.intrctPos - lastPos;
+        float distSqr = glm::dot(diff, diff);
+        return distSqr >= AppStates::minDistSqrBtwnVerts;
+    };
+	switch (states->game.intrctActMode)
+	{
+    case InteractionActionMode::AddPath:
+        if (actionDat.bChanged && !actionDat.bState)
         {
-        case InteractionActionMode::AddVertex:
-            states->pathManager->addVertex(states->game.intrctPos);
-            break;
-        default:
-            break;
+            auto pathID = states->pathRenderer->addPath(
+                glm::vec3{ 1.f }, states->game.intrctPos);
+            states->pathRenderer->startPath(pathID);
+            lastPos = states->game.intrctPos;
         }
-    }
-    catch (std::exception& e)
-    {
-        spdlog::info("{0}", e.what());
-    }
+        break;
+	case InteractionActionMode::AddVertex:
+        if (actionDat.bChanged && actionDat.bState)
+        {
+            auto id = states->pathRenderer->addSubPath();
+            states->pathRenderer->startSubPath(id);
+            pressed = true;
+        }
+        else if (actionDat.bChanged && !actionDat.bState)
+        {
+            GLuint id = states->pathRenderer->getSelectedVertID();
+            if (canAddVertex(states->game.intrctPos))
+                id = states->pathRenderer->addVertex(states->game.intrctPos);
+            states->pathRenderer->endSubPath();
+            states->pathRenderer->startVertex(id);
+            lastPos = states->game.intrctPos;
+            pressed = false;
+        }
+        else if (actionDat.bState && canAddVertex(states->game.intrctPos))
+        {
+            auto id = states->pathRenderer->addVertex(states->game.intrctPos);
+            states->pathRenderer->startVertex(id);
+            lastPos = states->game.intrctPos;
+        }
+		break;
+	default:
+		break;
+	}
 }
