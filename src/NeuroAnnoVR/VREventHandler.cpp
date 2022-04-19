@@ -241,7 +241,9 @@ void kouek::VREventHandler::update()
 void kouek::VREventHandler::onRightHandTriggerActed(
     const vr::InputDigitalActionData_t& actionDat)
 {
+    states->game.shouldSelectVertex = false;
     if (!actionDat.bActive) return;
+
     static bool pressed = false;
     static glm::vec3 lastPos;
     auto canAddVertex = [&](const glm::vec3& pos) -> bool {
@@ -251,6 +253,10 @@ void kouek::VREventHandler::onRightHandTriggerActed(
     };
 	switch (states->game.intrctActMode)
 	{
+    case InteractionActionMode::SelectVertex:
+        if (actionDat.bState)
+            states->game.shouldSelectVertex = true;
+        break;
     case InteractionActionMode::AddPath:
         if (actionDat.bChanged && !actionDat.bState)
         {

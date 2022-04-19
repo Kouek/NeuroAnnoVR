@@ -217,7 +217,7 @@ static void createSubsampleColorTex(
 		cudaTextureDesc texDesc;
 		memset(&texDesc, 0, sizeof(cudaTextureDesc));
 		texDesc.normalizedCoords = 0;
-		texDesc.filterMode = cudaFilterModePoint;
+		texDesc.filterMode = cudaFilterModeLinear;
 		texDesc.addressMode[0] = cudaAddressModeClamp;
 		texDesc.addressMode[1] = cudaAddressModeClamp;
 		texDesc.readMode = cudaReadModeNormalizedFloat;
@@ -244,7 +244,10 @@ __global__ void createSubsampleTexKernel(glm::vec4* d_sbsmpl)
 	float centerY, hfSbsmplW;
 	centerY = hfSbsmplW = .5f * dc_renderParam.sbsmplSize.x;
 	float hfWindowWid = .5f * dc_renderParam.windowSize.x;
-	float x, y, radSqr, scale;
+	float x, y, radSqr, scale, sbsmplX, sbsmplY;
+	// 0 for no, 1 for having value in 8 near-regions,
+	// 2 for having value itself
+	int hasVal = 0;
 
 	for (uint8_t stage = 0;
 		stage < dc_renderParam.sbsmplLvl;
@@ -252,22 +255,41 @@ __global__ void createSubsampleTexKernel(glm::vec4* d_sbsmpl)
 	{
 		if (texY < centerY - hfSbsmplW || texY >= centerY + hfSbsmplW) continue;
 
+		scale = 1.f - (float)stage / dc_renderParam.sbsmplLvl;
 		x = (float)texX - hfSbsmplW;
 		y = (float)texY - centerY;
-		radSqr = x * x + y * y;
-
-		scale = 1.f - (float)stage / dc_renderParam.sbsmplLvl;
-		x = x / scale + hfWindowWid;
-		y = y / scale + hfWindowWid;
-
+		sbsmplX = x / scale + hfWindowWid;
+		sbsmplY = y / scale + hfWindowWid;
+		// id: <y_double, x_double, y_sign, x_sign, y, x>
+		// 111011 101011 101010 101111 111111
+		// 011011 001011 001010 001111 011111
+		// 010001 000001 000000 000101 010101
+		// 010011 000011 000010 000111 010111
+		// 110011 100011 100010 100111 110111
 		scale *= scale;
-		if (radSqr >= dc_sbsmplRadSqrs[stage] * scale
-			&& radSqr < dc_sbsmplRadSqrs[stage + 1] * scale)
+		float lowerBound = dc_sbsmplRadSqrs[stage] * scale;
+		float upperBound = dc_sbsmplRadSqrs[stage + 1] * scale;
+		for (uint8_t id = 0; id < 25; ++id)
 		{
-			d_sbsmpl[texFlatIdx].x = x;
-			d_sbsmpl[texFlatIdx].y = y;
+			x = (float)texX - hfSbsmplW;
+			y = (float)texY - centerY;
+			x += ((id & 0x10) ? 2.f : 1.f) * ((id & 0x4) ? 1.f : -1.f) * ((id & 0x1) ? 1.f : 0.f);
+			y += ((id & 0x20) ? 2.f : 1.f) * ((id & 0x8) ? 1.f : -1.f) * ((id & 0x2) ? 1.f : 0.f);
+			radSqr = x * x + y * y;
+			if (radSqr >= lowerBound && radSqr < upperBound)
+			{
+				if (id == 0) hasVal = 2;
+				else hasVal = 1;
+				break;
+			}
+		}
+
+		if (hasVal != 0)
+		{
+			d_sbsmpl[texFlatIdx].x = sbsmplX;
+			d_sbsmpl[texFlatIdx].y = sbsmplY;
 			d_sbsmpl[texFlatIdx].z = 0;
-			d_sbsmpl[texFlatIdx].w = 1.f;
+			d_sbsmpl[texFlatIdx].w = hasVal == 2 ? 1.f : .5f;
 		}
 		else
 		{
@@ -311,7 +333,7 @@ __global__ void createReconstructionTexKernel(glm::vec4* d_recons)
 	// deal with inter-stage gap
 	float4 sbsmplTexVal = tex2D<float4>(
 		dc_sbsmplTexes[idx], x, y);
-	if (sbsmplTexVal.w == 0)
+	if (sbsmplTexVal.w != 1.f)
 	{
 		float maxRadSqr = .5f * dc_renderParam.windowSize.x;
 		maxRadSqr *= maxRadSqr;
@@ -326,7 +348,7 @@ __global__ void createReconstructionTexKernel(glm::vec4* d_recons)
 			y = xy.y * scale + sbsmplCntrY;
 			sbsmplTexVal = tex2D<float4>(
 				dc_sbsmplTexes[idx], x, y);
-			if (sbsmplTexVal.w != 0) break;
+			if (sbsmplTexVal.w == 1.f) break;
 		}
 	}
 	d_recons[texFlatIdx].x = x;
@@ -962,6 +984,12 @@ __global__ void testReconstructionKernel(
 	float4 sbsmplTexVal = tex2D<float4>(
 		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
 		reconsTexVal.x, reconsTexVal.y);
+	/*if (sbsmplTexVal.w == 1.f)
+		d_color = rgbaFloatToUbyte4(1.f, 1.f, 1.f, 1.f);
+	else if (sbsmplTexVal.w == 0)
+		d_color = rgbaFloatToUbyte4(0, 0, 0, 1.f);
+	else
+		d_color = rgbaFloatToUbyte4(1.f, .5f, 0, 1.f);*/
 	glm::vec2 diff = { sbsmplTexVal.x - (float)windowX,
 		sbsmplTexVal.y - (float)windowY};
 	diff = glm::abs(diff);

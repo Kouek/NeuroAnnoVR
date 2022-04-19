@@ -21,17 +21,27 @@ namespace kouek
 		inline static float rootVertSize = 5.f;
 		inline static float endVertSize = 3.f;
 		inline static float lineWidth = 1.f;
+		inline static float selectVertSize = 5.f;
+		inline static float selectedVertSize = 5.f;
 		inline static glm::vec3 selectedVertColor{ 1.f, .5f, 1.f };
 
 	private:
 		inline static constexpr GLubyte VERT_DAT_POS_NUM = 3;
-		inline static constexpr GLubyte VERT_DAT_ID_NUM = 1;
+		inline static constexpr GLubyte VERT_DAT_ID_NUM = 4;
 		inline static constexpr GLsizeiptr VERT_DAT_POS_SIZE
 			= sizeof(GLfloat) * VERT_DAT_POS_NUM;
 		inline static constexpr GLsizeiptr VERT_DAT_ID_SIZE
-			= sizeof(GLuint) * VERT_DAT_ID_NUM;
+			= sizeof(GLfloat) * VERT_DAT_ID_NUM;
 		inline static constexpr GLsizeiptr VERT_DAT_STRIDE
 			= VERT_DAT_POS_SIZE + VERT_DAT_ID_SIZE;
+
+#define VERTEX_ARRAY_DEF \
+		glVertexAttribPointer(0, VERT_DAT_POS_NUM, GL_FLOAT, GL_FALSE,\
+			VERT_DAT_STRIDE, nullptr);\
+		glEnableVertexAttribArray(0);\
+		glVertexAttribPointer(1, VERT_DAT_ID_NUM, GL_FLOAT, GL_FALSE,\
+			VERT_DAT_STRIDE, (const void*)VERT_DAT_POS_SIZE);\
+		glEnableVertexAttribArray(1);\
 
 		struct SubPath
 		{
@@ -45,12 +55,7 @@ namespace kouek
 
 				glGenVertexArrays(1, &VAO);
 				glBindVertexArray(VAO);
-				glVertexAttribPointer(0, VERT_DAT_POS_NUM, GL_FLOAT, GL_FALSE,
-					VERT_DAT_STRIDE, nullptr);
-				glEnableVertexAttribArray(0);
-				glVertexAttribPointer(1, VERT_DAT_ID_NUM, GL_UNSIGNED_INT, GL_FALSE,
-					VERT_DAT_STRIDE, (const void*)VERT_DAT_POS_SIZE);
-				glEnableVertexAttribArray(1);
+				VERTEX_ARRAY_DEF;
 				glGenBuffers(1, &EBO);
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
 				glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * vertGPUCap,
@@ -102,6 +107,12 @@ namespace kouek
 				glDrawElements(GL_LINE_STRIP, verts.size(),
 					GL_UNSIGNED_INT, 0);
 			}
+			inline void drawVerts()
+			{
+				glBindVertexArray(VAO);
+				glDrawElements(GL_POINTS, verts.size(),
+					GL_UNSIGNED_INT, 0);
+			}
 			inline void drawEndVerts()
 			{
 				glBindVertexArray(VAO);
@@ -124,12 +135,7 @@ namespace kouek
 			{
 				glGenVertexArrays(1, &VAO);
 				glBindVertexArray(VAO);
-				glVertexAttribPointer(0, VERT_DAT_POS_NUM, GL_FLOAT, GL_FALSE,
-					VERT_DAT_STRIDE, nullptr);
-				glEnableVertexAttribArray(0);
-				glVertexAttribPointer(1, VERT_DAT_ID_NUM, GL_UNSIGNED_INT, GL_FALSE,
-					VERT_DAT_STRIDE, (const void*)VERT_DAT_POS_SIZE);
-				glEnableVertexAttribArray(1);
+				VERTEX_ARRAY_DEF;
 				glBindVertexArray(0);
 			}
 			~Path()
@@ -170,16 +176,11 @@ namespace kouek
 		{
 			glGenVertexArrays(1, &slctVertVAO);
 			glBindVertexArray(slctVertVAO);
-			glVertexAttribPointer(0, VERT_DAT_POS_NUM, GL_FLOAT, GL_FALSE,
-				VERT_DAT_STRIDE, nullptr);
-			glEnableVertexAttribArray(0);
-			glVertexAttribPointer(1, VERT_DAT_ID_NUM, GL_UNSIGNED_INT, GL_FALSE,
-				VERT_DAT_STRIDE, (const void*)VERT_DAT_POS_SIZE);
-			glEnableVertexAttribArray(1);
 			glGenBuffers(1, &VBO);
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
 			glBufferStorage(GL_ARRAY_BUFFER, VERT_DAT_STRIDE * MAX_VERT_NUM,
 				nullptr, GL_DYNAMIC_STORAGE_BIT);
+			VERTEX_ARRAY_DEF;
 			glBindVertexArray(0);
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -190,6 +191,7 @@ namespace kouek
 			verts.resize(MAX_VERT_NUM);
 			pathIDOfVerts.resize(MAX_VERT_NUM);
 		}
+#undef VERTEX_ARRAY_DEF
 		~GLPathRenderer()
 		{
 			glDeleteBuffers(1, &VBO);
@@ -228,12 +230,18 @@ namespace kouek
 
 			verts[rootID] = rootPos;
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
+			GLintptr offs = VERT_DAT_STRIDE * rootID;
 			glBufferSubData(GL_ARRAY_BUFFER,
-				VERT_DAT_STRIDE * rootID, VERT_DAT_POS_SIZE,
-				&rootPos);
+				offs, VERT_DAT_POS_SIZE, &rootPos);
+			std::array<GLfloat, 4> id4{
+				(float)((rootID & 0x000000ff) >> 0) / 255.f,
+				(float)((rootID & 0x0000ff00) >> 8) / 255.f,
+				(float)((rootID & 0x00ff0000) >> 16) / 255.f,
+				(float)((rootID & 0xff000000) >> 24) / 255.f
+			};
 			glBufferSubData(GL_ARRAY_BUFFER,
-				VERT_DAT_STRIDE * rootID + VERT_DAT_POS_SIZE,
-				VERT_DAT_ID_SIZE, &rootID);
+				offs + VERT_DAT_POS_SIZE,
+				VERT_DAT_ID_SIZE, id4.data());
 			paths.emplace(std::piecewise_construct,
 				std::forward_as_tuple(pathID),
 				std::forward_as_tuple(color, rootID));
@@ -284,12 +292,18 @@ namespace kouek
 
 			verts[vertID] = pos;
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
+			GLintptr offs = VERT_DAT_STRIDE * vertID;
 			glBufferSubData(GL_ARRAY_BUFFER,
-				VERT_DAT_STRIDE * vertID,
-				VERT_DAT_POS_SIZE, &pos);
+				offs, VERT_DAT_POS_SIZE, &pos);
+			std::array<GLfloat, 4> id4{
+				(float)((vertID & 0x000000ff) >> 0) / 255.f,
+				(float)((vertID & 0x0000ff00) >> 8) / 255.f,
+				(float)((vertID & 0x00ff0000) >> 16) / 255.f,
+				(float)((vertID & 0xff000000) >> 24) / 255.f
+			};
 			glBufferSubData(GL_ARRAY_BUFFER,
-				VERT_DAT_STRIDE * vertID + VERT_DAT_POS_SIZE,
-				VERT_DAT_ID_SIZE, &vertID);
+				offs + VERT_DAT_POS_SIZE,
+				VERT_DAT_ID_SIZE, id4.data());
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 			auto& subPath = paths.at(selectedPathID)
@@ -308,6 +322,15 @@ namespace kouek
 		}
 		inline void draw(GLint colUniformPos = -1)
 		{
+			// draw selected vert
+			if (colUniformPos != -1
+				&& selectedVertID != std::numeric_limits<GLuint>::max())
+			{
+				glPointSize(selectedVertSize);
+				glUniform3fv(colUniformPos, 1, (const float*)&selectedVertColor);
+				glBindVertexArray(slctVertVAO);
+				glDrawArrays(GL_POINTS, selectedVertID, 1);
+			}
 			for (auto& [id, path] : paths)
 			{
 				if (colUniformPos != -1)
@@ -328,17 +351,23 @@ namespace kouek
 				glPointSize(rootVertSize);
 				path.drawRoot();
 			}
-			// draw selected vert
-			if (colUniformPos != -1)
-			{
-				glPointSize(endVertSize);
-				glUniform3fv(colUniformPos, 1, (const float*)&selectedVertColor);
-				glBindVertexArray(slctVertVAO);
-				glDrawArrays(GL_POINTS, selectedVertID, 1);
-			}
 			glLineWidth(1.f);
 			glPointSize(1.f);
 			glBindVertexArray(0);
+		}
+		inline void drawVertIDs()
+		{
+			for (auto& [id, path] : paths)
+			{
+				// upload GPU needed data
+				for (auto& [id, subPath] : path.subPaths)
+					if (subPath.needUpload)
+						subPath.upload();
+				// draw verts
+				glPointSize(20.f);
+				for (auto& [id, subPath] : path.subPaths)
+					subPath.drawVerts();
+			}
 		}
 	};
 }

@@ -69,7 +69,7 @@ void kouek::CompVolumeFAVRRendererImpl::setInteractionParam(
 void kouek::CompVolumeFAVRRendererImpl::render(
 	glm::vec3* intrctPos, RenderTarget renderTar)
 {
-	FAVRRenderParam->sbsmplLvl = 4;
+	FAVRRenderParam->sbsmplLvl = 5;
 	FAVRRenderParam->sbsmplSize.x = renderParam->windowSize.x / FAVRRenderParam->sbsmplLvl;
 	FAVRRenderParam->sbsmplSize.y = FAVRRenderParam->sbsmplSize.x * FAVRRenderParam->sbsmplLvl;
 	FAVRFunc->uploadRenderParam(*FAVRRenderParam);

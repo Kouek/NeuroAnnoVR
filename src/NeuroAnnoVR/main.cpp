@@ -192,7 +192,7 @@ static void initVolumeRender(VolumeRenderType& volumeRender, std::shared_ptr<App
 		volumeRender.volume->SetSpaceX(cfg.getSpaceX() * scale);
 		volumeRender.volume->SetSpaceY(cfg.getSpaceY() * scale);
 		volumeRender.volume->SetSpaceZ(cfg.getSpaceZ() * scale);
-		volumeRender.renderer->setStep(3000, cfg.getBaseSpace() * scale * .3f );
+		volumeRender.renderer->setStep(1024, cfg.getBaseSpace() * scale * .3f );
 		AppStates::subrgnMoveSensity = AppStates::moveSensity = std::max(
 			volumeRender.volume->GetVolumeSpaceX(),
 			volumeRender.volume->GetVolumeSpaceY());
@@ -261,6 +261,8 @@ int main(int argc, char** argv)
 	GLPathRenderer pathRenderer;
 	GLPathRenderer::rootVertSize = 20.f;
 	GLPathRenderer::endVertSize = 5.f;
+	GLPathRenderer::selectedVertSize = 8.f;
+	GLPathRenderer::selectVertSize = 3.f;
 	GLPathRenderer::lineWidth = 2.f;
 	states->pathRenderer = &pathRenderer;
 	volumeRender.renderer->setInteractionParam(states->game.intrctParam);
@@ -378,6 +380,7 @@ int main(int argc, char** argv)
 	std::array<glm::mat4, 2> annotationBallMVP2;
 	std::array<std::array<glm::mat4, 2>, 2> handMVP22;
 	glm::vec4 annotationBallProjectedPos;
+	glm::vec2 annotationBallScreenPos;
 	while (states->canRun)
 	{
 		GL_CHECK;
@@ -400,28 +403,28 @@ int main(int argc, char** argv)
 			annotationBall.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
 			annotationBall.transform = glm::scale(annotationBall.transform, glm::vec3{ ANNO_BALL_DIAMETER });
 
-			if (states->game.intrctActMode == InteractionActionMode::SelectVertex)
+			annotationBallProjectedPos = VP2[0] * glm::vec4{ ballPos,1.f };
+			annotationBallProjectedPos /= annotationBallProjectedPos.w;
+
+			annotationBallScreenPos.x = .5f * (annotationBallProjectedPos.x + 1.f);
+			annotationBallScreenPos.y = .5f * (annotationBallProjectedPos.y + 1.f);
+			if (states->game.shouldSelectVertex
+				&& annotationBallScreenPos.x >= 0 && annotationBallScreenPos.x < 1.f
+				&& annotationBallScreenPos.y >= 0 && annotationBallScreenPos.y < 1.f)
 			{
-				annotationBallProjectedPos = VP2[0] * states->camera.getViewMat(0)
-					* glm::vec4{ ballPos,1.f };
-				annotationBallProjectedPos.x = .5f * (annotationBallProjectedPos.x + 1.f);
-				annotationBallProjectedPos.y = .5f * (annotationBallProjectedPos.y + 1.f);
-				if (annotationBallProjectedPos.x >= 0 && annotationBallProjectedPos.x < 1.f
-					&& annotationBallProjectedPos.y >= 0 && annotationBallProjectedPos.y < 1.f)
-				{
-					std::array<GLubyte, 4> id3;
-					glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
-					glPixelStorei(GL_PACK_ALIGNMENT, 1);
-					glReadPixels(
-						(GLint)(states->HMDRenderSizePerEye[0] * annotationBallProjectedPos.x),
-						(GLint)(states->HMDRenderSizePerEye[1] * annotationBallProjectedPos.y),
-						1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id3.data());
-					GLuint vertID = (GLuint)id3[0]
-						| ((GLuint)id3[1] << 8) | ((GLuint)id3[2] << 16)
-						| ((GLuint)id3[2] << 24);
-					if (vertID != std::numeric_limits<GLuint>::max())
-						pathRenderer.startVertex(vertID);
-				}
+				std::array<GLubyte, 4> id4;
+				glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
+				glPixelStorei(GL_PACK_ALIGNMENT, 1);
+				glReadPixels(
+					(GLint)floor(states->HMDRenderSizePerEye[0] * annotationBallScreenPos.x),
+					(GLint)floor(states->HMDRenderSizePerEye[1] * annotationBallScreenPos.y),
+					1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id4.data());
+				GLuint vertID = (GLuint)id4[0]
+					| ((GLuint)id4[1] << 8)
+					| ((GLuint)id4[2] << 16)
+					| ((GLuint)id4[3] << 24);
+				if (vertID != std::numeric_limits<GLuint>::max())
+					pathRenderer.startVertex(vertID);
 			}
 		}
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
@@ -476,6 +479,14 @@ int main(int argc, char** argv)
 					glPointSize(GLPathRenderer::endVertSize);
 				intrctPoint.model->draw();
 			}
+			else if (eyeIdx == vr::Eye_Left)
+			{
+				shaders.zeroDepthShader.program.bind();
+				glUniformMatrix4fv(
+					shaders.colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
+				glPointSize(GLPathRenderer::selectVertSize);
+				intrctPoint.model->draw();
+			}
 
 			shaders.pathDepthShader.program.bind();
 			glUniformMatrix4fv(
@@ -483,14 +494,15 @@ int main(int argc, char** argv)
 			pathRenderer.draw();
 			});
 
-		glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
+		if (states->game.intrctActMode == InteractionActionMode::SelectVertex)
 		{
+			glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
 			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			shaders.pathDepthShader.program.bind();
+			shaders.pathSelectShader.program.bind();
 			glUniformMatrix4fv(
-				shaders.pathDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[0]);
-			pathRenderer.draw();
+				shaders.pathSelectShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[0]);
+			pathRenderer.drawVertIDs();
 		}
 
 		glEnable(GL_MULTISAMPLE);
@@ -524,6 +536,13 @@ int main(int argc, char** argv)
 					glPointSize(GLPathRenderer::endVertSize);
 				intrctPoint.model->draw();
 			}
+			else if (eyeIdx == vr::Eye_Left)
+			{
+				glUniformMatrix4fv(
+					shaders.colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
+				glPointSize(GLPathRenderer::selectVertSize);
+				intrctPoint.model->draw();
+			}
 
 			VRContext::forHandsDo([&](uint8_t hndIdx) {
 				if (!states->hand2[hndIdx].show) return;
@@ -553,15 +572,19 @@ int main(int argc, char** argv)
 				states->unProjection2[vr::Eye_Left],states->unProjection2[vr::Eye_Right],
 				states->nearClip, states->farClip });
 		}
-		if (states->game.intrctActMode == InteractionActionMode::AddPath
-			|| states->game.intrctActMode == InteractionActionMode::AddVertex)
+		if (static_cast<uint32_t>(states->game.intrctActMode) & (
+			static_cast<uint32_t>(InteractionActionMode::AddPath)
+			| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
 		{
 			volumeRender.renderer->setInteractionParam(states->game.intrctParam);
 			volumeRender.renderer->render(&states->game.intrctPos, states->renderTar);
 			intrctPoint.model->setPosData(states->game.intrctPos);
 		}
 		else
+		{
 			volumeRender.renderer->render(nullptr, states->renderTar);
+			intrctPoint.model->setPosData(glm::vec3(annotationBallProjectedPos));
+		}
 
 		glDisable(GL_DEPTH_TEST);
 		glEnable(GL_BLEND);

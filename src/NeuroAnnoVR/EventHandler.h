@@ -24,7 +24,7 @@ namespace kouek
 		std::string modelName;
 	};
 
-	enum class GameMode : uint8_t
+	enum class MoveMode : uint8_t
 	{
 		Focus = 0,
 		Wander
@@ -42,7 +42,8 @@ namespace kouek
 
 	struct Game
 	{
-		GameMode gameMode = GameMode::Wander;
+		bool shouldSelectVertex = false;
+		MoveMode gameMode = MoveMode::Wander;
 		InteractionActionMode intrctActMode = InteractionActionMode::SelectVertex;
 		glm::vec3 intrctPos;
 		CompVolumeFAVRRenderer::InteractionParameter intrctParam;
