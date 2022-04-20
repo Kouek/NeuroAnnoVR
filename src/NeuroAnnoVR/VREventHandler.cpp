@@ -155,6 +155,36 @@ kouek::VREventHandler::~VREventHandler()
 
 void kouek::VREventHandler::update()
 {
+    if (states->showOverlay2[VRContext::Hand_Left]
+        || states->showOverlay2[VRContext::Hand_Right])
+        updateWhenDrawingOverlay();
+    else
+        updateWhenDrawingCompositor();
+}
+
+
+void kouek::VREventHandler::updateWhenDrawingOverlay()
+{
+    // handle VR input action
+    vr::VRActiveActionSet_t activeActionSet = { 0 };
+    activeActionSet.ulActionSet = actionsetFocus;
+    vr::VRInput()->UpdateActionState(&activeActionSet, sizeof(activeActionSet), 1);
+    // digital action
+    {
+        vr::InputDigitalActionData_t actionData;
+        // handle left menu
+        vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bChanged && actionData.bState)
+            states->showOverlay2[VRContext::Hand_Left] = false;
+        // handle right menu
+        vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bChanged && actionData.bState)
+            states->showOverlay2[VRContext::Hand_Right] = false;
+    }
+}
+
+void kouek::VREventHandler::updateWhenDrawingCompositor()
+{
     // handle HMD pose changed
     {
         vr::TrackedDevicePose_t trackedDevicePoses[vr::k_unMaxTrackedDeviceCount];
@@ -218,6 +248,26 @@ void kouek::VREventHandler::update()
     // digital action
     {
         vr::InputDigitalActionData_t actionData;
+        // handle left menu
+        vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bChanged && actionData.bState)
+        {
+            states->showOverlay2[VRContext::Hand_Left] = true;
+            states->showOverlay2[VRContext::Hand_Right] = false;
+            // drawing Overlay from now, no need to process more
+            return;
+        }
+
+        // handle right menu
+        vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bChanged && actionData.bState)
+        {
+            states->showOverlay2[VRContext::Hand_Left] = false;
+            states->showOverlay2[VRContext::Hand_Right] = true;
+            // drawing Overlay from now, no need to process more
+            return;
+        }
+
         // handle left trackpad
         {
             std::array<float, 3> moveSteps = { 0 };

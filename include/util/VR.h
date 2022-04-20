@@ -24,6 +24,8 @@ namespace
                 func(hndIdx);
         };
 
+        static inline constexpr uint8_t Hand_Left = static_cast<uint8_t>(HandEnum::Left);
+        static inline constexpr uint8_t Hand_Right = static_cast<uint8_t>(HandEnum::Right);
 		static inline std::function<void(std::function<void(uint8_t)>)> forEyesDo =
 			[](std::function<void(uint8_t)> func) {
 			for (uint8_t eyeIdx = vr::Eye_Left; eyeIdx <= vr::Eye_Right; ++eyeIdx)

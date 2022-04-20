@@ -61,6 +61,7 @@ namespace kouek
 		static inline float minDistSqrBtwnVerts = .008f;
 
 		bool canRun = true, canVRRun = true;
+		std::array<bool, 2> showOverlay2 = { false };
 		float nearClip = 0.01f, farClip = 10.f;
 		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
 		std::array<uint32_t, 2> HMDRenderSizePerEye = { 1080,1080 };

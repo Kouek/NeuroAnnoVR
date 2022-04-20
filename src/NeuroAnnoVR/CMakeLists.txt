@@ -1,13 +1,15 @@
 set(TARGET_NAME "NeuroAnnoVR")
 
-aux_source_directory(${CMAKE_CURRENT_LIST_DIR} SRCS)
+aux_source_directory("./" SRCS)
+aux_source_directory("./GUI" GUI_SRCS)
 
 add_executable(
 	${TARGET_NAME}
-	${SRCS}
-	"EditorWindow.ui" # Necessary! Or it won't be MOC
+	${SRCS} ${GUI_SRCS}
+	# Necessary! Or it won't be MOC
+	"./GUI/EditorWindow.ui" "./GUI/LeftHandUI.ui"
 	"${THIRDPARTY_DIR}/glad/src/glad.c"
-)
+ "MainApp.h")
 target_include_directories(
 	${TARGET_NAME}
 	PRIVATE
