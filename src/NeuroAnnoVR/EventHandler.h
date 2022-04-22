@@ -58,13 +58,16 @@ namespace kouek
 	{
 		static inline float moveSensity = .1f;
 		static inline float subrgnMoveSensity = .1f;
-		static inline float minDistSqrBtwnVerts = .008f;
+		static inline float minDistSqrBtwnVerts = .004f;
+		static inline glm::vec3 UITranslateToHead = glm::vec3{ 0,0,-2.f };
 
 		bool canRun = true, canVRRun = true;
-		std::array<bool, 2> showOverlay2 = { false };
+		std::array<bool, 2> showHandUI2 = { false };
+		bool showGizmo = false;
 		float nearClip = 0.01f, farClip = 10.f;
 		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
 		std::array<uint32_t, 2> HMDRenderSizePerEye = { 1080,1080 };
+		glm::vec3 UITranslate;
 		std::array<glm::mat4, vr::k_unMaxTrackedDeviceCount> devicePoses;
 		std::array<glm::mat4, 2> projection2;
 		std::array<glm::mat4, 2> unProjection2;

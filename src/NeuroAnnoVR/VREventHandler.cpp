@@ -94,8 +94,8 @@ kouek::VREventHandler::VREventHandler(
 		states->projection2[eyeIdx] = steamVRMat44ToGLMMat4(
 			HMD->GetProjectionMatrix((vr::EVREye)eyeIdx, states->nearClip, states->farClip));
 		states->unProjection2[eyeIdx] = Math::inverseProjective(states->projection2[eyeIdx]);
-
-		states->eyeToHMD2[eyeIdx] = steamVRMat34ToGLMMat4(HMD->GetEyeToHeadTransform((vr::EVREye)eyeIdx));
+		states->eyeToHMD2[eyeIdx] = steamVRMat34ToGLMMat4(
+            HMD->GetEyeToHeadTransform((vr::EVREye)eyeIdx));
 		});
 
     {
@@ -155,15 +155,15 @@ kouek::VREventHandler::~VREventHandler()
 
 void kouek::VREventHandler::update()
 {
-    if (states->showOverlay2[VRContext::Hand_Left]
-        || states->showOverlay2[VRContext::Hand_Right])
-        updateWhenDrawingOverlay();
+    if (states->showHandUI2[VRContext::Hand_Left]
+        || states->showHandUI2[VRContext::Hand_Right])
+        updateWhenDrawingUI();
     else
-        updateWhenDrawingCompositor();
+        updateWhenDrawingScene();
 }
 
 
-void kouek::VREventHandler::updateWhenDrawingOverlay()
+void kouek::VREventHandler::updateWhenDrawingUI()
 {
     // handle VR input action
     vr::VRActiveActionSet_t activeActionSet = { 0 };
@@ -175,15 +175,15 @@ void kouek::VREventHandler::updateWhenDrawingOverlay()
         // handle left menu
         vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bChanged && actionData.bState)
-            states->showOverlay2[VRContext::Hand_Left] = false;
+            states->showHandUI2[VRContext::Hand_Left] = false;
         // handle right menu
         vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bChanged && actionData.bState)
-            states->showOverlay2[VRContext::Hand_Right] = false;
+            states->showHandUI2[VRContext::Hand_Right] = false;
     }
 }
 
-void kouek::VREventHandler::updateWhenDrawingCompositor()
+void kouek::VREventHandler::updateWhenDrawingScene()
 {
     // handle HMD pose changed
     {
@@ -198,6 +198,11 @@ void kouek::VREventHandler::updateWhenDrawingCompositor()
             }
         }
         states->camera.setSelfRotation(states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd]);
+        auto& [R, F, U, PL, PR] = states->camera.getRFUP2();
+        states->UITranslate = states->camera.getHeadPos()
+            + AppStates::UITranslateToHead.x * R
+            + AppStates::UITranslateToHead.y * U
+            - AppStates::UITranslateToHead.z * F;
     }
     auto& HMDPose = states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
 
@@ -252,8 +257,8 @@ void kouek::VREventHandler::updateWhenDrawingCompositor()
         vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bChanged && actionData.bState)
         {
-            states->showOverlay2[VRContext::Hand_Left] = true;
-            states->showOverlay2[VRContext::Hand_Right] = false;
+            states->showHandUI2[VRContext::Hand_Left] = true;
+            states->showHandUI2[VRContext::Hand_Right] = false;
             // drawing Overlay from now, no need to process more
             return;
         }
@@ -262,8 +267,8 @@ void kouek::VREventHandler::updateWhenDrawingCompositor()
         vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bChanged && actionData.bState)
         {
-            states->showOverlay2[VRContext::Hand_Left] = false;
-            states->showOverlay2[VRContext::Hand_Right] = true;
+            states->showHandUI2[VRContext::Hand_Left] = false;
+            states->showHandUI2[VRContext::Hand_Right] = true;
             // drawing Overlay from now, no need to process more
             return;
         }
@@ -312,6 +317,7 @@ void kouek::VREventHandler::onRightHandTriggerActed(
         {
             auto pathID = states->pathRenderer->addPath(
                 glm::vec3{ 1.f }, states->game.intrctPos);
+            states->pathRenderer->endPath();
             states->pathRenderer->startPath(pathID);
             lastPos = states->game.intrctPos;
         }

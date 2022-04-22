@@ -18,21 +18,9 @@ namespace kouek
 {
 	struct HandUIHandler : public QObject
 	{
-		inline static constexpr std::array<std::string_view, 2> OVERLAY_KEY_2 = {
-			"kouek.leftHandUI", "kouek.rightHandUI" };
-		inline static constexpr std::array<std::string_view, 2> OVERLAY_NAME_2 = {
-			"Left Hand UI", "Right Hand UI" };
-
-		bool canRun = true;
-
 		std::array<QWidget*, 2> wdgt2;
 		std::array<QGraphicsScene*, 2> scn2;
-		std::array<QOffscreenSurface*, 2> offScrnSurf2;
-		std::array<QOpenGLContext*, 2> ctx2;
 		std::array<QOpenGLFramebufferObject*, 2> FBO2;
-
-		std::array<vr::VROverlayHandle_t, 2> overlayHandle2;
-		std::array<vr::VROverlayHandle_t, 2> overlayThumbnailHandle2;
 
 		QTimer* timer;
 
@@ -59,8 +47,10 @@ namespace kouek
 			EditorWindow* sender,
 			std::shared_ptr<AppStates> sharedStates);
 		void update() override;
-		void updateWhenDrawingOverlay();
-		void updateWhenDrawingCompositor();
+		inline GLuint getHandUITex(uint8_t handIdx) const
+		{
+			return handUI.FBO2[handIdx]->texture();
+		}
 	};
 }
 

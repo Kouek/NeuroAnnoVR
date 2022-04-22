@@ -7,74 +7,24 @@
 
 kouek::HandUIHandler::HandUIHandler()
 {
-	QSurfaceFormat surfFmt;
-	surfFmt.setDepthBufferSize(24);
-	surfFmt.setStencilBufferSize(8);
-	surfFmt.setVersion(4, 5);
-	surfFmt.setProfile(QSurfaceFormat::CompatibilityProfile);
+	wdgt2[VRContext::Hand_Left] = new LeftHandUI();
+	wdgt2[VRContext::Hand_Right] = new LeftHandUI();
 
-	VRContext::forHandsDo([&](uint8_t handIdx) {
-		ctx2[handIdx] = new QOpenGLContext();
-		ctx2[handIdx]->setFormat(surfFmt);
-		auto ok = ctx2[handIdx]->create();
-		if (!ok)
-		{
-			canRun = false;
-			return;
-		}
-		offScrnSurf2[handIdx] = new QOffscreenSurface();
-		offScrnSurf2[handIdx]->create();
-		ctx2[handIdx]->makeCurrent(offScrnSurf2[handIdx]);
-
+	/*VRContext::forHandsDo([&](uint8_t handIdx) {
+		wdgt2[handIdx]->move(0, 0);
 		scn2[handIdx] = new QGraphicsScene();
+		scn2[handIdx]->addWidget(wdgt2[VRContext::Hand_Left]);
+
+		FBO2[handIdx] = new QOpenGLFramebufferObject(
+			wdgt2[handIdx]->size(), GL_TEXTURE_2D);
 		});
-	if (!canRun) return;
 
 	QObject::connect(scn2[0], &QGraphicsScene::changed,
-		this, &HandUIHandler::onLeftHandSceneChanged);
-
-	wdgt2[VRContext::Hand_Left] = new LeftHandUI();
-	wdgt2[VRContext::Hand_Left]->move(0, 0);
-	scn2[VRContext::Hand_Left]->addWidget(wdgt2[VRContext::Hand_Left]);
-	FBO2[VRContext::Hand_Left] = new QOpenGLFramebufferObject(
-		wdgt2[VRContext::Hand_Left]->size(), GL_TEXTURE_2D);
-	wdgt2[VRContext::Hand_Right] = new LeftHandUI();
-	wdgt2[VRContext::Hand_Right]->move(0, 0);
-	scn2[VRContext::Hand_Right]->addWidget(wdgt2[VRContext::Hand_Left]);
-	FBO2[VRContext::Hand_Right] = new QOpenGLFramebufferObject(
-		wdgt2[VRContext::Hand_Right]->size(), GL_TEXTURE_2D);
-
-	if (!vr::VROverlay())
-	{
-		canRun = false;
-		return;
-	}
-	VRContext::forHandsDo([&](uint8_t handIdx) {
-		vr::VROverlayError err = vr::VROverlay()->CreateDashboardOverlay(
-			OVERLAY_KEY_2[handIdx].data(), OVERLAY_NAME_2[handIdx].data(),
-			&overlayHandle2[handIdx], &overlayThumbnailHandle2[handIdx]);
-		if (err != vr::VROverlayError_None)
-		{
-			canRun = false;
-			return;
-		}
-		vr::VROverlay()->SetOverlayWidthInMeters(overlayHandle2[handIdx], 1.5f);
-		vr::VROverlay()->SetOverlayInputMethod(overlayHandle2[handIdx],
-			vr::VROverlayInputMethod_Mouse);
-		});
-	if (!canRun) return;
+		this, &HandUIHandler::onLeftHandSceneChanged);*/
 
 	timer = new QTimer(this);
 	QObject::connect(timer, &QTimer::timeout, this, &HandUIHandler::onTimeOut);
 	timer->setInterval(20);
-
-	VRContext::forHandsDo([&](uint8_t handIdx) {
-		vr::HmdVector2_t vecWindowSize = {
-			(float)wdgt2[handIdx]->width(),
-			(float)wdgt2[handIdx]->height()
-		};
-		vr::VROverlay()->SetOverlayMouseScale(overlayHandle2[handIdx], &vecWindowSize);
-		});
 }
 
 kouek::HandUIHandler::~HandUIHandler()
@@ -84,132 +34,16 @@ kouek::HandUIHandler::~HandUIHandler()
 
 void kouek::HandUIHandler::onTimeOut()
 {
-	if (!vr::VRSystem()) return;
-	VRContext::forHandsDo([&](uint8_t handIdx) {
-		vr::VREvent_t vrEvent;
-		while (vr::VROverlay()->PollNextOverlayEvent(
-			overlayHandle2[handIdx], &vrEvent, sizeof(vrEvent)))
-		{
-			switch (vrEvent.eventType)
-			{
-			case vr::VREvent_MouseMove:
-			{
-				QPointF newMouse(vrEvent.data.mouse.x, vrEvent.data.mouse.y);
-				QPoint glblNewMouse = newMouse.toPoint();
-				QGraphicsSceneMouseEvent mouseEvent(QEvent::GraphicsSceneMouseMove);
-				mouseEvent.setWidget(NULL);
-				mouseEvent.setPos(newMouse);
-				mouseEvent.setScenePos(glblNewMouse);
-				mouseEvent.setScreenPos(glblNewMouse);
-				mouseEvent.setLastPos(lastMouse);
-				mouseEvent.setLastScenePos(
-					wdgt2[handIdx]->mapToGlobal(lastMouse.toPoint()));
-				mouseEvent.setLastScreenPos(
-					wdgt2[handIdx]->mapToGlobal(lastMouse.toPoint()));
-				mouseEvent.setButtons(lastMouseBtn);
-				mouseEvent.setButton(Qt::NoButton);
-				mouseEvent.setModifiers(0);
-				mouseEvent.setAccepted(false);
-
-				lastMouse = newMouse;
-				QApplication::sendEvent(scn2[handIdx], &mouseEvent);
-
-				if (handIdx == VRContext::Hand_Left)
-					onLeftHandSceneChanged(QList<QRectF>());
-			}
-			break;
-
-			case vr::VREvent_MouseButtonDown:
-			{
-				Qt::MouseButton button = vrEvent.data.mouse.button == vr::VRMouseButton_Right ? Qt::RightButton : Qt::LeftButton;
-
-				lastMouseBtn |= button;
-
-				QPoint glblLastMouse = lastMouse.toPoint();
-				QGraphicsSceneMouseEvent mouseEvent(QEvent::GraphicsSceneMousePress);
-				mouseEvent.setWidget(NULL);
-				mouseEvent.setPos(lastMouse);
-				mouseEvent.setButtonDownPos(button, lastMouse);
-				mouseEvent.setButtonDownScenePos(button, glblLastMouse);
-				mouseEvent.setButtonDownScreenPos(button, glblLastMouse);
-				mouseEvent.setScenePos(glblLastMouse);
-				mouseEvent.setScreenPos(glblLastMouse);
-				mouseEvent.setLastPos(lastMouse);
-				mouseEvent.setLastScenePos(glblLastMouse);
-				mouseEvent.setLastScreenPos(glblLastMouse);
-				mouseEvent.setButtons(lastMouseBtn);
-				mouseEvent.setButton(button);
-				mouseEvent.setModifiers(0);
-				mouseEvent.setAccepted(false);
-
-				QApplication::sendEvent(scn2[handIdx], &mouseEvent);
-			}
-			break;
-
-			case vr::VREvent_MouseButtonUp:
-			{
-				Qt::MouseButton button = vrEvent.data.mouse.button == vr::VRMouseButton_Right ? Qt::RightButton : Qt::LeftButton;
-				lastMouseBtn &= ~button;
-
-				QPoint glblLastMouse = lastMouse.toPoint();
-				QGraphicsSceneMouseEvent mouseEvent(QEvent::GraphicsSceneMouseRelease);
-				mouseEvent.setWidget(NULL);
-				mouseEvent.setPos(lastMouse);
-				mouseEvent.setScenePos(glblLastMouse);
-				mouseEvent.setScreenPos(glblLastMouse);
-				mouseEvent.setLastPos(lastMouse);
-				mouseEvent.setLastScenePos(glblLastMouse);
-				mouseEvent.setLastScreenPos(glblLastMouse);
-				mouseEvent.setButtons(lastMouseBtn);
-				mouseEvent.setButton(button);
-				mouseEvent.setModifiers(0);
-				mouseEvent.setAccepted(false);
-
-				QApplication::sendEvent(scn2[handIdx], &mouseEvent);
-			}
-			break;
-
-			case vr::VREvent_OverlayShown:
-				wdgt2[handIdx]->repaint();
-			break;
-
-			case vr::VREvent_Quit:
-				QApplication::exit();
-				break;
-			}
-		}
-
-		if (overlayThumbnailHandle2[handIdx] != vr::k_ulOverlayHandleInvalid)
-		{
-			while (vr::VROverlay()->PollNextOverlayEvent(
-				overlayThumbnailHandle2[handIdx], &vrEvent, sizeof(vrEvent)))
-			{
-				switch (vrEvent.eventType)
-				{
-				case vr::VREvent_OverlayShown:
-					wdgt2[handIdx]->repaint();
-				break;
-				}
-			}
-		}
-		});
+	
 }
 
 void kouek::HandUIHandler::onLeftHandSceneChanged(const QList<QRectF>& region)
 {
-	// skip rendering if the overlay isn't visible
-	if ((overlayHandle2[VRContext::Hand_Left] == vr::k_ulOverlayHandleInvalid)
-		|| !vr::VROverlay()
-		|| (!vr::VROverlay()->IsOverlayVisible(overlayHandle2[VRContext::Hand_Left]) 
-			&& !vr::VROverlay()->IsOverlayVisible(overlayThumbnailHandle2[VRContext::Hand_Left])))
-		return;
-
-	ctx2[VRContext::Hand_Left]->makeCurrent(offScrnSurf2[VRContext::Hand_Left]);
-	FBO2[VRContext::Hand_Left]->bind();
+	/*FBO2[VRContext::Hand_Left]->bind();
 	QOpenGLPaintDevice device(FBO2[VRContext::Hand_Left]->size());
 	QPainter painter(&device);
 	scn2[VRContext::Hand_Left]->render(&painter);
-	FBO2[VRContext::Hand_Left]->release();
+	FBO2[VRContext::Hand_Left]->release();*/
 }
 
 kouek::QtEventHandler::QtEventHandler(
@@ -279,47 +113,24 @@ kouek::QtEventHandler::QtEventHandler(
 				states->game.intrctActMode = InteractionActionMode::AddPath; break;
 			case Qt::Key_3:
 				states->game.intrctActMode = InteractionActionMode::AddVertex; break;
+			case Qt::Key_G:
+				states->showGizmo = !states->showGizmo; break;
 			}
 		});
 }
 
 void kouek::QtEventHandler::update()
 {
-	if (states->showOverlay2[VRContext::Hand_Left]
-		|| states->showOverlay2[VRContext::Hand_Right])
-		updateWhenDrawingOverlay();
-	else
-		updateWhenDrawingCompositor();
-}
+	if (states->showHandUI2[VRContext::Hand_Left]
+		|| states->showHandUI2[VRContext::Hand_Right])
+	{
+		if (!handUI.timer->isActive())
+			handUI.timer->start();
 
-void kouek::QtEventHandler::updateWhenDrawingOverlay()
-{
-	if (states->showOverlay2[VRContext::Hand_Left])
-	{
-		vr::VROverlay()->ShowOverlay(
-			handUI.overlayHandle2[VRContext::Hand_Left]);
-		if (handUI.timer->isActive())
-			handUI.timer->start();
-	}
-	else if (states->showOverlay2[VRContext::Hand_Right])
-	{
-		vr::VROverlay()->ShowOverlay(
-			handUI.overlayHandle2[VRContext::Hand_Left]);
-		if (handUI.timer->isActive())
-			handUI.timer->start();
 	}
 	else
-	{
-		vr::VROverlay()->HideOverlay(
-			handUI.overlayHandle2[VRContext::Hand_Left]);
-		vr::VROverlay()->HideOverlay(
-			handUI.overlayHandle2[VRContext::Hand_Right]);
 		handUI.timer->stop();
-	}
-}
 
-void kouek::QtEventHandler::updateWhenDrawingCompositor()
-{
 	if (moveSteps[0] != 0 || moveSteps[1] != 0 || moveSteps[2] != 0)
 	{
 		states->camera.move(moveSteps[0], moveSteps[1], moveSteps[2]);

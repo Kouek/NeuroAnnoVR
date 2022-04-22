@@ -76,7 +76,7 @@ static std::tuple<GLuint, GLuint, GLuint> createFrambuffer(
 	return { FBO,colorTex,depthRBO };
 }
 
-static std::tuple<GLuint, GLuint, GLuint> createScreenQuad()
+static std::tuple<GLuint, GLuint, GLuint> createPlane()
 {
 	GLuint VAO, VBO, EBO;
 	glGenVertexArrays(1, &VAO);
@@ -218,6 +218,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	qtApp = std::make_unique<QApplication>(argc, argv);
 	editorWindow = std::make_unique<EditorWindow>();
 	editorWindow->showMaximized();
+	editorWindow->getVRView()->makeCurrent(); // set it as default GL Context
 
 	// init States and Event Handler (both VR and Qt) ====>
 	states = std::make_shared<AppStates>();
@@ -233,11 +234,10 @@ kouek::MainApp::MainApp(int argc, char** argv)
 		spdlog::error("File: {0}, Line: {1}, Error: {2}", __FILE__,
 			__LINE__, e.what());
 	}
-	// qtEvntHndler's Overlay handler depends on vrEvntHndler
-	qtEvntHndler = std::make_unique<QtEventHandler>(editorWindow.get(), states);
+	qtEvntHndler = std::make_unique<QtEventHandler>(
+		editorWindow.get(), states);
 
 	// init Volume and GL Resource ====>
-	editorWindow->getVRView()->makeCurrent(); // set it as default GL Context
 
 	shaders = std::make_unique<Shaders>();
 	
@@ -260,7 +260,9 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	intrctPoint.model = std::make_unique<Point>();
 	intrctPoint.model->setColorData(GLPathRenderer::selectedVertColor);
 
-	std::tie(screenQuad.VAO, screenQuad.VBO, screenQuad.EBO) = createScreenQuad();
+	std::tie(screenQuad.VAO, screenQuad.VBO, screenQuad.EBO) = createPlane();
+	std::tie(handUIQuad[0].VAO, handUIQuad[0].VBO, handUIQuad[0].EBO) = createPlane();
+	std::tie(handUIQuad[1].VAO, handUIQuad[1].VBO, handUIQuad[1].EBO) = createPlane();
 
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		std::tie(
@@ -336,255 +338,32 @@ kouek::MainApp::~MainApp() {}
 
 int kouek::MainApp::run()
 {
+	if (!states->canRun) return 1;
+
 	std::array<vr::Texture_t, 2> submitVRTex2 = {
 		vr::Texture_t{(void*)(uintptr_t)submitFramebuffer2[vr::Eye_Left].colorTex, vr::TextureType_OpenGL, vr::ColorSpace_Gamma},
 		vr::Texture_t{(void*)(uintptr_t)submitFramebuffer2[vr::Eye_Right].colorTex, vr::TextureType_OpenGL, vr::ColorSpace_Gamma}
 	};
 
-	if (!states->canRun) return 1;
-
 	while (states->canRun)
 	{
 		qtApp->processEvents();
-		qtEvntHndler->update();
-		if (states->canVRRun)
-		{
-			// vrEvntHndler use default GL Context
-			editorWindow->getVRView()->makeCurrent();
-			vrEvntHndler->update();
-		}
-		// Overlay has been drawn, no need to draw Compositor
-		if (states->showOverlay2[VRContext::Hand_Left]
-			|| states->showOverlay2[VRContext::Hand_Right])
-			continue;
-		// EvntHndler may trigger GL context switch,
-		// make the default back
 		editorWindow->getVRView()->makeCurrent();
-		
-		static auto identity = glm::identity<glm::mat4>();
-		if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
-		{
-			auto& handZ = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[2];
-			auto& handPos = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[3];
-			glm::vec3 ballPos = handPos - ANNO_BALL_DIST_FROM_HAND * handZ;
-			states->game.intrctParam.dat.ball.startPos.x = ballPos.x - ANNO_BALL_RADIUS;
-			states->game.intrctParam.dat.ball.startPos.y = ballPos.y - ANNO_BALL_RADIUS;
-			states->game.intrctParam.dat.ball.startPos.z = ballPos.z - ANNO_BALL_RADIUS;
-			anno.ball.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
-			anno.ball.transform = glm::scale(anno.ball.transform, glm::vec3{ ANNO_BALL_DIAMETER });
 
-			anno.ball.projectedPos = VP2[0] * glm::vec4{ ballPos,1.f };
-			anno.ball.projectedPos /= anno.ball.projectedPos.w;
+		if (states->canVRRun)
+			vrEvntHndler->update();
+		qtEvntHndler->update();
 
-			anno.ball.screenPos.x = .5f * (anno.ball.projectedPos.x + 1.f);
-			anno.ball.screenPos.y = .5f * (anno.ball.projectedPos.y + 1.f);
-			if (states->game.shouldSelectVertex
-				&& anno.ball.screenPos.x >= 0 && anno.ball.screenPos.x < 1.f
-				&& anno.ball.screenPos.y >= 0 && anno.ball.screenPos.y < 1.f)
-			{
-				std::array<GLubyte, 4> id4;
-				glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
-				glPixelStorei(GL_PACK_ALIGNMENT, 1);
-				glReadPixels(
-					(GLint)floor(states->HMDRenderSizePerEye[0] * anno.ball.screenPos.x),
-					(GLint)floor(states->HMDRenderSizePerEye[1] * anno.ball.screenPos.y),
-					1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id4.data());
-				GLuint vertID = (GLuint)id4[0]
-					| ((GLuint)id4[1] << 8)
-					| ((GLuint)id4[2] << 16)
-					| ((GLuint)id4[3] << 24);
-				if (vertID != std::numeric_limits<GLuint>::max())
-					pathRenderer->startVertex(vertID);
-			}
-		}
 		VRContext::forEyesDo([&](uint8_t eyeIdx) {
 			VP2[eyeIdx] = states->projection2[eyeIdx]
 				* states->camera.getViewMat(eyeIdx);
-			gizmoMVP2[eyeIdx] = VP2[eyeIdx] * gizmo.transform;
-			anno.ball.MVP2[eyeIdx] = VP2[eyeIdx] * anno.ball.transform;
-			VRContext::forHandsDo([&](uint8_t hndIdx) {
-				handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
-					* states->hand2[hndIdx].transform;
-				});
 			});
-		
-		glEnable(GL_DEPTH_TEST);
-		glDisable(GL_BLEND);
-		glClearColor(1.f, 1.f, 1.f, 1.f); // area without frag corresp to FarClip
-		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer2[eyeIdx].FBO);
-			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-			shaders->depthShader.program.bind();
-			glUniformMatrix4fv(
-				shaders->depthShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
-			gizmo.model->draw();
-
-			if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
-			{
-				glUniformMatrix4fv(
-					shaders->depthShader.matPos, 1, GL_FALSE,
-					(GLfloat*)&anno.ball.MVP2[eyeIdx]);
-				annoBall.model->draw();
-			}
-
-			VRContext::forHandsDo([&](uint8_t hndIdx) {
-				if (!states->hand2[hndIdx].show) return;
-				glUniformMatrix4fv(
-					shaders->depthShader.matPos, 1, GL_FALSE,
-					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
-				states->hand2[hndIdx].model->draw();
-				});
-
-			if (static_cast<uint32_t>(states->game.intrctActMode) & (
-				static_cast<uint32_t>(InteractionActionMode::AddPath)
-				| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
-			{
-				shaders->zeroDepthShader.program.bind();
-				glUniformMatrix4fv(
-					shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
-				if (states->game.intrctActMode == InteractionActionMode::AddPath)
-					glPointSize(GLPathRenderer::rootVertSize);
-				else
-					glPointSize(GLPathRenderer::endVertSize);
-				intrctPoint.model->draw();
-			}
-			else if (eyeIdx == vr::Eye_Left)
-			{
-				shaders->zeroDepthShader.program.bind();
-				glUniformMatrix4fv(
-					shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
-				glPointSize(GLPathRenderer::selectVertSize);
-				intrctPoint.model->draw();
-			}
-
-			shaders->pathDepthShader.program.bind();
-			glUniformMatrix4fv(
-				shaders->pathDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
-			pathRenderer->draw();
-			});
-
-		if (states->game.intrctActMode == InteractionActionMode::SelectVertex)
-		{
-			glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
-			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			shaders->pathSelectShader.program.bind();
-			glUniformMatrix4fv(
-				shaders->pathSelectShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[0]);
-			pathRenderer->drawVertIDs();
-		}
-
-		glEnable(GL_MULTISAMPLE);
-		glClearColor(0.f, 0.f, 0.f, 1.f); // restore
-		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
-			glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-			shaders->colorShader.program.bind();
-			glUniformMatrix4fv(
-				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
-			gizmo.model->draw();
-
-			if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
-			{
-				glUniformMatrix4fv(
-					shaders->colorShader.matPos, 1, GL_FALSE,
-					(GLfloat*)&anno.ball.MVP2[eyeIdx]);
-				annoBall.model->draw();
-			}
-
-			if (static_cast<uint32_t>(states->game.intrctActMode) & (
-				static_cast<uint32_t>(InteractionActionMode::AddPath)
-				| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
-			{
-				glUniformMatrix4fv(
-					shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
-				if (states->game.intrctActMode == InteractionActionMode::AddPath)
-					glPointSize(GLPathRenderer::rootVertSize);
-				else
-					glPointSize(GLPathRenderer::endVertSize);
-				intrctPoint.model->draw();
-			}
-			else if (eyeIdx == vr::Eye_Left)
-			{
-				glUniformMatrix4fv(
-					shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
-				glPointSize(GLPathRenderer::selectVertSize);
-				intrctPoint.model->draw();
-			}
-
-			VRContext::forHandsDo([&](uint8_t hndIdx) {
-				if (!states->hand2[hndIdx].show) return;
-				shaders->diffuseShader.program.bind();
-				glUniformMatrix4fv(
-					shaders->diffuseShader.matPos, 1, GL_FALSE,
-					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
-				states->hand2[hndIdx].model->draw();
-				});
-
-			shaders->pathColorShader.program.bind();
-			glUniformMatrix4fv(
-				shaders->pathColorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
-			pathRenderer->draw(shaders->pathColorShader.colorPos);
-			});
-		
-		{
-			auto [right, forward, up, lftEyePos, rhtEyePos] =
-				states->camera.getRFUP2();
-			glm::mat4 rotation(
-				right.x, right.y, right.z, 0,
-				up.x, up.y, up.z, 0,
-				-forward.x, -forward.y, -forward.z, 0,
-				0, 0, 0, 1.f);
-			volumeRender.renderer->setCamera(
-				{ lftEyePos, rhtEyePos, rotation,
-				states->unProjection2[vr::Eye_Left],states->unProjection2[vr::Eye_Right],
-				states->nearClip, states->farClip });
-		}
-		if (static_cast<uint32_t>(states->game.intrctActMode) & (
-			static_cast<uint32_t>(InteractionActionMode::AddPath)
-			| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
-		{
-			volumeRender.renderer->setInteractionParam(states->game.intrctParam);
-			volumeRender.renderer->render(&states->game.intrctPos, states->renderTar);
-			intrctPoint.model->setPosData(states->game.intrctPos);
-		}
+		if (states->showHandUI2[VRContext::Hand_Left]
+			|| states->showHandUI2[VRContext::Hand_Right])
+			drawUI();
 		else
-		{
-			volumeRender.renderer->render(nullptr, states->renderTar);
-			intrctPoint.model->setPosData(glm::vec3(anno.ball.projectedPos));
-		}
+			drawScene();
 
-		glDisable(GL_DEPTH_TEST);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_DST_ALPHA);
-		shaders->diffuseShader.program.bind();
-		glUniformMatrix4fv(
-			shaders->diffuseShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
-		glBindVertexArray(screenQuad.VAO);
-		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
-			{
-				glBindTexture(GL_TEXTURE_2D, volumeRender.tex2[eyeIdx]);
-				glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
-				glBindTexture(GL_TEXTURE_2D, 0);
-			}
-			});
-		glBindVertexArray(0);
-
-		glDisable(GL_MULTISAMPLE);
-		VRContext::forEyesDo([&](uint8_t eyeIdx) {
-			glBindFramebuffer(GL_READ_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
-			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, submitFramebuffer2[eyeIdx].FBO);
-			glBlitFramebuffer(
-				0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
-				0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
-				GL_COLOR_BUFFER_BIT, GL_LINEAR);
-			});
-		
 		editorWindow->getVRView()->update();
 		if (states->canVRRun)
 		{
@@ -595,4 +374,287 @@ int kouek::MainApp::run()
 
 	qtApp->exit();
 	return 0;
+}
+
+void kouek::MainApp::drawUI()
+{
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_MULTISAMPLE);
+	glClearColor(0.f, 0.f, 0.f, 1.f);
+
+	shaders->diffuseShader.program.bind();
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		handUIMVP2[eyeIdx] = glm::translate(
+			glm::identity<glm::mat4>(), states->UITranslate);
+		handUIMVP2[eyeIdx] = VP2[eyeIdx] * handUIMVP2[eyeIdx];
+
+		glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		VRContext::forHandsDo([&](uint8_t hndIdx) {
+			if (states->hand2[hndIdx].show)
+			{
+				handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
+					* states->hand2[hndIdx].transform;
+
+				glUniformMatrix4fv(
+					shaders->diffuseShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
+				states->hand2[hndIdx].model->draw();
+			}
+			if (states->showHandUI2[hndIdx])
+			{
+				glUniformMatrix4fv(
+					shaders->diffuseShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&handUIMVP2[hndIdx]);
+				glBindVertexArray(handUIQuad[hndIdx].VAO);
+				glBindTexture(GL_TEXTURE_2D, qtEvntHndler->getHandUITex(hndIdx));
+				glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
+				glBindVertexArray(0);
+			}
+			});
+		});
+
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_MULTISAMPLE);
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, submitFramebuffer2[eyeIdx].FBO);
+		glBlitFramebuffer(
+			0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
+			0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
+			GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		});
+}
+
+void kouek::MainApp::drawScene()
+{
+	static auto identity = glm::identity<glm::mat4>();
+	if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+	{
+		auto& handZ = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[2];
+		auto& handPos = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[3];
+		glm::vec3 ballPos = handPos - ANNO_BALL_DIST_FROM_HAND * handZ;
+		states->game.intrctParam.dat.ball.startPos.x = ballPos.x - ANNO_BALL_RADIUS;
+		states->game.intrctParam.dat.ball.startPos.y = ballPos.y - ANNO_BALL_RADIUS;
+		states->game.intrctParam.dat.ball.startPos.z = ballPos.z - ANNO_BALL_RADIUS;
+		anno.ball.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
+		anno.ball.transform = glm::scale(anno.ball.transform, glm::vec3{ ANNO_BALL_DIAMETER });
+
+		anno.ball.projectedPos = VP2[0] * glm::vec4{ ballPos,1.f };
+		anno.ball.projectedPos /= anno.ball.projectedPos.w;
+
+		anno.ball.screenPos.x = .5f * (anno.ball.projectedPos.x + 1.f);
+		anno.ball.screenPos.y = .5f * (anno.ball.projectedPos.y + 1.f);
+		if (states->game.shouldSelectVertex
+			&& anno.ball.screenPos.x >= 0 && anno.ball.screenPos.x < 1.f
+			&& anno.ball.screenPos.y >= 0 && anno.ball.screenPos.y < 1.f)
+		{
+			std::array<GLubyte, 4> id4;
+			glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
+			glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			glReadPixels(
+				(GLint)floor(states->HMDRenderSizePerEye[0] * anno.ball.screenPos.x),
+				(GLint)floor(states->HMDRenderSizePerEye[1] * anno.ball.screenPos.y),
+				1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id4.data());
+			GLuint vertID = (GLuint)id4[0]
+				| ((GLuint)id4[1] << 8)
+				| ((GLuint)id4[2] << 16)
+				| ((GLuint)id4[3] << 24);
+			if (vertID != std::numeric_limits<GLuint>::max())
+				pathRenderer->startVertex(vertID);
+		}
+	}
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		gizmoMVP2[eyeIdx] = VP2[eyeIdx] * gizmo.transform;
+		anno.ball.MVP2[eyeIdx] = VP2[eyeIdx] * anno.ball.transform;
+		VRContext::forHandsDo([&](uint8_t hndIdx) {
+			handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
+				* states->hand2[hndIdx].transform;
+			});
+		});
+
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+	glClearColor(1.f, 1.f, 1.f, 1.f); // area without frag corresp to FarClip
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		glBindFramebuffer(GL_FRAMEBUFFER, depthFramebuffer2[eyeIdx].FBO);
+		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		shaders->depthShader.program.bind();
+		if (states->showGizmo)
+		{
+			glUniformMatrix4fv(
+				shaders->depthShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
+			gizmo.model->draw();
+		}
+
+		if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+		{
+			glUniformMatrix4fv(
+				shaders->depthShader.matPos, 1, GL_FALSE,
+				(GLfloat*)&anno.ball.MVP2[eyeIdx]);
+			annoBall.model->draw();
+		}
+
+		VRContext::forHandsDo([&](uint8_t hndIdx) {
+			if (!states->hand2[hndIdx].show) return;
+			glUniformMatrix4fv(
+				shaders->depthShader.matPos, 1, GL_FALSE,
+				(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
+			states->hand2[hndIdx].model->draw();
+			});
+
+		if (static_cast<uint32_t>(states->game.intrctActMode) & (
+			static_cast<uint32_t>(InteractionActionMode::AddPath)
+			| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
+		{
+			shaders->zeroDepthShader.program.bind();
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+			if (states->game.intrctActMode == InteractionActionMode::AddPath)
+				glPointSize(GLPathRenderer::rootVertSize);
+			else
+				glPointSize(GLPathRenderer::endVertSize);
+			intrctPoint.model->draw();
+		}
+		else if (eyeIdx == vr::Eye_Left)
+		{
+			shaders->zeroDepthShader.program.bind();
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
+			glPointSize(GLPathRenderer::selectVertSize);
+			intrctPoint.model->draw();
+		}
+
+		shaders->pathDepthShader.program.bind();
+		glUniformMatrix4fv(
+			shaders->pathDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+		pathRenderer->draw();
+		});
+
+	if (states->game.intrctActMode == InteractionActionMode::SelectVertex)
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
+		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		shaders->pathSelectShader.program.bind();
+		glUniformMatrix4fv(
+			shaders->pathSelectShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[0]);
+		pathRenderer->drawVertIDs();
+	}
+
+	glEnable(GL_MULTISAMPLE);
+	glClearColor(0.f, 0.f, 0.f, 1.f); // restore
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		shaders->colorShader.program.bind();
+		if (states->showGizmo)
+		{
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
+			gizmo.model->draw();
+		}
+
+		if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+		{
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE,
+				(GLfloat*)&anno.ball.MVP2[eyeIdx]);
+			annoBall.model->draw();
+		}
+
+		if (static_cast<uint32_t>(states->game.intrctActMode) & (
+			static_cast<uint32_t>(InteractionActionMode::AddPath)
+			| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
+		{
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+			if (states->game.intrctActMode == InteractionActionMode::AddPath)
+				glPointSize(GLPathRenderer::rootVertSize);
+			else
+				glPointSize(GLPathRenderer::endVertSize);
+			intrctPoint.model->draw();
+		}
+		else if (eyeIdx == vr::Eye_Left)
+		{
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
+			glPointSize(GLPathRenderer::selectVertSize);
+			intrctPoint.model->draw();
+		}
+
+		VRContext::forHandsDo([&](uint8_t hndIdx) {
+			if (!states->hand2[hndIdx].show) return;
+			shaders->diffuseShader.program.bind();
+			glUniformMatrix4fv(
+				shaders->diffuseShader.matPos, 1, GL_FALSE,
+				(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
+			states->hand2[hndIdx].model->draw();
+			});
+
+		shaders->pathColorShader.program.bind();
+		glUniformMatrix4fv(
+			shaders->pathColorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+		pathRenderer->draw(shaders->pathColorShader.colorPos);
+		});
+
+	{
+		auto [right, forward, up, lftEyePos, rhtEyePos] =
+			states->camera.getRFUP2();
+		glm::mat4 rotation(
+			right.x, right.y, right.z, 0,
+			up.x, up.y, up.z, 0,
+			-forward.x, -forward.y, -forward.z, 0,
+			0, 0, 0, 1.f);
+		volumeRender.renderer->setCamera(
+			{ lftEyePos, rhtEyePos, rotation,
+			states->unProjection2[vr::Eye_Left],states->unProjection2[vr::Eye_Right],
+			states->nearClip, states->farClip });
+	}
+	if (static_cast<uint32_t>(states->game.intrctActMode) & (
+		static_cast<uint32_t>(InteractionActionMode::AddPath)
+		| static_cast<uint32_t>(InteractionActionMode::AddVertex)))
+	{
+		volumeRender.renderer->setInteractionParam(states->game.intrctParam);
+		volumeRender.renderer->render(&states->game.intrctPos, states->renderTar);
+		intrctPoint.model->setPosData(states->game.intrctPos);
+	}
+	else
+	{
+		volumeRender.renderer->render(nullptr, states->renderTar);
+		intrctPoint.model->setPosData(glm::vec3(anno.ball.projectedPos));
+	}
+
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_DST_ALPHA);
+	shaders->diffuseShader.program.bind();
+	glUniformMatrix4fv(
+		shaders->diffuseShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
+	glBindVertexArray(screenQuad.VAO);
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+		{
+			glBindTexture(GL_TEXTURE_2D, volumeRender.tex2[eyeIdx]);
+			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+		});
+	glBindVertexArray(0);
+
+	glDisable(GL_MULTISAMPLE);
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, submitFramebuffer2[eyeIdx].FBO);
+		glBlitFramebuffer(
+			0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
+			0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1],
+			GL_COLOR_BUFFER_BIT, GL_LINEAR);
+		});
 }

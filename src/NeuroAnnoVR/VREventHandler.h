@@ -39,8 +39,8 @@ namespace kouek
 		void update() override;
 
     private:
-        void updateWhenDrawingOverlay();
-        void updateWhenDrawingCompositor();
+        void updateWhenDrawingUI();
+        void updateWhenDrawingScene();
 
         inline void onRightHandTriggerActed(
             const vr::InputDigitalActionData_t& actionDat);
