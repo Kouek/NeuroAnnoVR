@@ -8,7 +8,8 @@
 #include <QtCore/qtimer.h>
 #include <QtGui/qopenglcontext.h>
 #include <QtGui/qopenglframebufferobject.h>
-#include <QtGui/qoffscreensurface.h>
+#include <QtGui/qopenglpaintdevice.h>
+#include <QtGui/qpainter.h>
 #include <QtWidgets/qgraphicsscene.h>
 
 #include <CMakeIn.h>
@@ -18,16 +19,20 @@ namespace kouek
 {
 	struct HandUIHandler : public QObject
 	{
+		EditorWindow* glCtxProvider;
+
 		std::array<QWidget*, 2> wdgt2;
 		std::array<QGraphicsScene*, 2> scn2;
 		std::array<QOpenGLFramebufferObject*, 2> FBO2;
+		std::array<QOpenGLPaintDevice*, 2> glDvc2;
+		std::array<QPainter*, 2> pntr2;
 
 		QTimer* timer;
 
 		QFlags<Qt::MouseButton> lastMouseBtn;
 		QPointF lastMouse;
 
-		HandUIHandler();
+		HandUIHandler(EditorWindow* glCtxProvider);
 		~HandUIHandler();
 
 		void onTimeOut();
@@ -50,6 +55,10 @@ namespace kouek
 		inline GLuint getHandUITex(uint8_t handIdx) const
 		{
 			return handUI.FBO2[handIdx]->texture();
+		}
+		inline QPainter* getPainter(uint8_t handIdx) const
+		{
+			return handUI.pntr2[handIdx];
 		}
 	};
 }

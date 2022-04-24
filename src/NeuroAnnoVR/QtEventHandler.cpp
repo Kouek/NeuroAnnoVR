@@ -1,26 +1,30 @@
 #include "QtEventHandler.h"
 
-#include <QtGui/qopenglpaintdevice.h>
-#include <QtGui/qpainter.h>
 #include <QtWidgets/qapplication.h>
 #include <QtWidgets/qgraphicssceneevent.h>
 
-kouek::HandUIHandler::HandUIHandler()
+kouek::HandUIHandler::HandUIHandler(EditorWindow* glCtxProvider)
+	:glCtxProvider(glCtxProvider)
 {
+	glCtxProvider->getVRView()->makeCurrent();
+
 	wdgt2[VRContext::Hand_Left] = new LeftHandUI();
 	wdgt2[VRContext::Hand_Right] = new LeftHandUI();
 
-	/*VRContext::forHandsDo([&](uint8_t handIdx) {
-		wdgt2[handIdx]->move(0, 0);
-		scn2[handIdx] = new QGraphicsScene();
-		scn2[handIdx]->addWidget(wdgt2[VRContext::Hand_Left]);
+	VRContext::forHandsDo([&](uint8_t hndIdx) {
+		wdgt2[hndIdx]->move(0, 0);
+		scn2[hndIdx] = new QGraphicsScene();
+		scn2[hndIdx]->addWidget(wdgt2[VRContext::Hand_Left]);
 
-		FBO2[handIdx] = new QOpenGLFramebufferObject(
-			wdgt2[handIdx]->size(), GL_TEXTURE_2D);
+		FBO2[hndIdx] = new QOpenGLFramebufferObject(
+			wdgt2[hndIdx]->size(), GL_TEXTURE_2D);
+		glDvc2[hndIdx] = new QOpenGLPaintDevice(
+			FBO2[VRContext::Hand_Left]->size());
+		pntr2[hndIdx] = new QPainter(glDvc2[hndIdx]);
 		});
 
 	QObject::connect(scn2[0], &QGraphicsScene::changed,
-		this, &HandUIHandler::onLeftHandSceneChanged);*/
+		this, &HandUIHandler::onLeftHandSceneChanged);
 
 	timer = new QTimer(this);
 	QObject::connect(timer, &QTimer::timeout, this, &HandUIHandler::onTimeOut);
@@ -34,22 +38,23 @@ kouek::HandUIHandler::~HandUIHandler()
 
 void kouek::HandUIHandler::onTimeOut()
 {
-	
+	onLeftHandSceneChanged(QList<QRectF>());
 }
 
 void kouek::HandUIHandler::onLeftHandSceneChanged(const QList<QRectF>& region)
 {
-	/*FBO2[VRContext::Hand_Left]->bind();
-	QOpenGLPaintDevice device(FBO2[VRContext::Hand_Left]->size());
-	QPainter painter(&device);
-	scn2[VRContext::Hand_Left]->render(&painter);
-	FBO2[VRContext::Hand_Left]->release();*/
+	glCtxProvider->getVRView()->makeCurrent();
+	pntr2[VRContext::Hand_Left]->endNativePainting();
+	FBO2[VRContext::Hand_Left]->bind();
+	scn2[VRContext::Hand_Left]->render(pntr2[VRContext::Hand_Left]);
+	FBO2[VRContext::Hand_Left]->release();
+	pntr2[VRContext::Hand_Left]->beginNativePainting();
 }
 
 kouek::QtEventHandler::QtEventHandler(
 	EditorWindow* sender,
 	std::shared_ptr<AppStates> sharedStates)
-	: EventHandler(sharedStates)
+	: EventHandler(sharedStates), handUI(sender)
 {
 	QObject::connect(sender, &EditorWindow::closed, [&]() {
 		states->canRun = false;
@@ -77,20 +82,29 @@ kouek::QtEventHandler::QtEventHandler(
 		[&](int key, int functionKey) {
 			switch (key)
 			{
+				// Render Target Control
 			case Qt::Key_Plus:
 				increaseRenderTar(states->renderTar); break;
 			case Qt::Key_Minus:
 				decreaseRenderTar(states->renderTar); break;
+				// Camera Control
 			case Qt::Key_Up:
-				moveSteps[2] = +AppStates::moveSensity;
+				if (functionKey == Qt::Key_Control)
+					moveSteps[1] = +AppStates::moveSensity;
+				else
+					moveSteps[2] = +AppStates::moveSensity;
 				break;
 			case Qt::Key_Down:
-				moveSteps[2] = -AppStates::moveSensity;
+				if (functionKey == Qt::Key_Control)
+					moveSteps[1] = -AppStates::moveSensity;
+				else
+					moveSteps[2] = -AppStates::moveSensity;
 				break;
 			case Qt::Key_Right:
 				moveSteps[0] = +AppStates::moveSensity; break;
 			case Qt::Key_Left:
 				moveSteps[0] = -AppStates::moveSensity; break;
+				// Subregion Control
 			case Qt::Key_W:
 				if (functionKey == Qt::Key_Control)
 					subrgnMoveSteps[1] = +AppStates::moveSensity;
@@ -107,14 +121,24 @@ kouek::QtEventHandler::QtEventHandler(
 				subrgnMoveSteps[0] = +AppStates::moveSensity; break;
 			case Qt::Key_A:
 				subrgnMoveSteps[0] = -AppStates::moveSensity; break;
+				// Interaction Control
 			case Qt::Key_1:
 				states->game.intrctActMode = InteractionActionMode::SelectVertex; break;
 			case Qt::Key_2:
 				states->game.intrctActMode = InteractionActionMode::AddPath; break;
 			case Qt::Key_3:
 				states->game.intrctActMode = InteractionActionMode::AddVertex; break;
+				// Utility
 			case Qt::Key_G:
 				states->showGizmo = !states->showGizmo; break;
+			case Qt::Key_L:
+				states->showHandUI2[VRContext::Hand_Left] = !states->showHandUI2[VRContext::Hand_Left];
+				states->showHandUI2[VRContext::Hand_Right] = false;
+				break;
+			case Qt::Key_R:
+				states->showHandUI2[VRContext::Hand_Right] = !states->showHandUI2[VRContext::Hand_Right];
+				states->showHandUI2[VRContext::Hand_Left] = false;
+				break;
 			}
 		});
 }
@@ -126,7 +150,6 @@ void kouek::QtEventHandler::update()
 	{
 		if (!handUI.timer->isActive())
 			handUI.timer->start();
-
 	}
 	else
 		handUI.timer->stop();

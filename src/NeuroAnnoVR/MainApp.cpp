@@ -238,7 +238,6 @@ kouek::MainApp::MainApp(int argc, char** argv)
 		editorWindow.get(), states);
 
 	// init Volume and GL Resource ====>
-
 	shaders = std::make_unique<Shaders>();
 	
 	initVolumeRender(volumeRender, states);
@@ -349,7 +348,6 @@ int kouek::MainApp::run()
 	{
 		qtApp->processEvents();
 		editorWindow->getVRView()->makeCurrent();
-
 		if (states->canVRRun)
 			vrEvntHndler->update();
 		qtEvntHndler->update();
