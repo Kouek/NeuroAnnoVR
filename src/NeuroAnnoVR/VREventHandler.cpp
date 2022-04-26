@@ -155,6 +155,22 @@ kouek::VREventHandler::~VREventHandler()
 
 void kouek::VREventHandler::update()
 {
+    // handle HMD pose changed
+    {
+        vr::TrackedDevicePose_t trackedDevicePoses[vr::k_unMaxTrackedDeviceCount];
+        vr::VRCompositor()->WaitGetPoses(trackedDevicePoses, vr::k_unMaxTrackedDeviceCount, NULL, 0);
+        for (uint32_t devIdx = 0; devIdx < vr::k_unMaxTrackedDeviceCount; ++devIdx)
+        {
+            if (trackedDevicePoses[devIdx].bPoseIsValid)
+                states->devicePoses[devIdx] = steamVRMat34ToGLMMat4(
+                    trackedDevicePoses[devIdx].mDeviceToAbsoluteTracking);
+        }
+        auto HMDRealPosture = states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
+        HMDRealPosture[3] += glm::vec4{ states->cameraMountPos, 0 };
+        states->camera.setPosture(HMDRealPosture);
+    }
+    onHandPosecChanged();
+
     if (states->showHandUI2[VRContext::Hand_Left]
         || states->showHandUI2[VRContext::Hand_Right])
         updateWhenDrawingUI();
@@ -175,38 +191,106 @@ void kouek::VREventHandler::updateWhenDrawingUI()
         // handle left menu
         vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bChanged && actionData.bState)
-            states->showHandUI2[VRContext::Hand_Left] = false;
+            states->showHandUI2[VRContext::Hand_Left]
+            = states->showHandUI2[VRContext::Hand_Right] = false;
         // handle right menu
         vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         if (actionData.bActive && actionData.bChanged && actionData.bState)
-            states->showHandUI2[VRContext::Hand_Right] = false;
+            states->showHandUI2[VRContext::Hand_Left]
+            = states->showHandUI2[VRContext::Hand_Right] = false;
+        // handle right trigger
+        vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive)
+            if (actionData.bState)
+                if (actionData.bChanged)
+                {
+                    states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MousePressed);
+                    states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
+                }
+                else
+                {
+                    states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MouseMoved);
+                    states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
+                }
+            else if (actionData.bChanged)
+            {
+                states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MouseReleased);
+                states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
+            }
+            else
+            {
+                states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MouseMoved);
+                states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
+            }
     }
 }
 
 void kouek::VREventHandler::updateWhenDrawingScene()
 {
-    // handle HMD pose changed
-    {
-        vr::TrackedDevicePose_t trackedDevicePoses[vr::k_unMaxTrackedDeviceCount];
-        vr::VRCompositor()->WaitGetPoses(trackedDevicePoses, vr::k_unMaxTrackedDeviceCount, NULL, 0);
-        {
-            for (uint32_t devIdx = 0; devIdx < vr::k_unMaxTrackedDeviceCount; ++devIdx)
-            {
-                if (trackedDevicePoses[devIdx].bPoseIsValid)
-                    states->devicePoses[devIdx] = steamVRMat34ToGLMMat4(
-                        trackedDevicePoses[devIdx].mDeviceToAbsoluteTracking);
-            }
-        }
-        states->camera.setSelfRotation(states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd]);
+    // handle VR input action
+    vr::VRActiveActionSet_t activeActionSet = { 0 };
+    activeActionSet.ulActionSet = actionsetFocus;
+    vr::VRInput()->UpdateActionState(&activeActionSet, sizeof(activeActionSet), 1);
+
+    auto computeUITransform = [&]() {
         auto& [R, F, U, PL, PR] = states->camera.getRFUP2();
-        states->UITranslate = states->camera.getHeadPos()
+        auto pos = states->camera.getHeadPos()
             + AppStates::UITranslateToHead.x * R
             + AppStates::UITranslateToHead.y * U
             - AppStates::UITranslateToHead.z * F;
-    }
-    auto& HMDPose = states->devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
+        states->handUITransform[0] = glm::vec4{ R, 0 };
+        states->handUITransform[1] = glm::vec4{ U, 0 };
+        states->handUITransform[2] = glm::vec4{ -F, 0 };
+        states->handUITransform[3] = glm::vec4{ pos, 1.f };
+    };
 
-    // hanlde hand pose changed
+    // digital action
+    {
+        vr::InputDigitalActionData_t actionData;
+        // handle left menu
+        vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bChanged && actionData.bState)
+        {
+            states->showHandUI2[VRContext::Hand_Left] = true;
+            states->showHandUI2[VRContext::Hand_Right] = false;
+            computeUITransform();
+        }
+        // handle right menu
+        vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bChanged && actionData.bState)
+        {
+            states->showHandUI2[VRContext::Hand_Left] = false;
+            states->showHandUI2[VRContext::Hand_Right] = true;
+            computeUITransform();
+        }
+        // handle left trackpad
+        {
+            static int32_t lastDeg = 0;
+            int32_t dltDeg = 0;
+            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadWClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+            if (actionData.bActive && actionData.bState) dltDeg += 10;
+            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadEClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+            if (actionData.bActive && actionData.bState) dltDeg -= 10;
+            if (dltDeg != 0)
+            {
+                // TODO
+            }
+        }
+        // handle right trigger
+        vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        onRightHandTriggerPressed(actionData);
+    }
+    // analog action
+    {
+        vr::InputAnalogActionData_t actionData;
+        // handle left trigger
+        vr::VRInput()->GetAnalogActionData(actionLeftTriggerPull, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        onLeftHandTriggerPulled(actionData);
+    }
+}
+
+void kouek::VREventHandler::onHandPosecChanged()
+{
     VRContext::forHandsDo([&](uint8_t hndIdx) {
         vr::InputPoseActionData_t poseData;
         if (vr::VRInput()->GetPoseActionDataForNextFrame(
@@ -221,9 +305,9 @@ void kouek::VREventHandler::updateWhenDrawingScene()
             states->hand2[hndIdx].transform = steamVRMat34ToGLMMat4(
                 poseData.pose.mDeviceToAbsoluteTracking);
             auto& hndPos = states->hand2[hndIdx].transform[3];
-            hndPos[0] = hndPos[0] - HMDPose[3][0] + states->camera.getHeadPos().x;
-            hndPos[1] = hndPos[1] - HMDPose[3][1] + states->camera.getHeadPos().y;
-            hndPos[2] = hndPos[2] - HMDPose[3][2] + states->camera.getHeadPos().z;
+            hndPos[0] += states->cameraMountPos.x;
+            hndPos[1] += states->cameraMountPos.y;
+            hndPos[2] += states->cameraMountPos.z;
 
             vr::InputOriginInfo_t originInfo;
             if (vr::VRInput()->GetOriginTrackedDeviceInfo(
@@ -245,55 +329,32 @@ void kouek::VREventHandler::updateWhenDrawingScene()
             }
         }
         });
-
-    // handle VR input action
-    vr::VRActiveActionSet_t activeActionSet = { 0 };
-    activeActionSet.ulActionSet = actionsetFocus;
-    vr::VRInput()->UpdateActionState(&activeActionSet, sizeof(activeActionSet), 1);
-    // digital action
-    {
-        vr::InputDigitalActionData_t actionData;
-        // handle left menu
-        vr::VRInput()->GetDigitalActionData(actionLeftMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-        if (actionData.bActive && actionData.bChanged && actionData.bState)
-        {
-            states->showHandUI2[VRContext::Hand_Left] = true;
-            states->showHandUI2[VRContext::Hand_Right] = false;
-            // drawing Overlay from now, no need to process more
-            return;
-        }
-
-        // handle right menu
-        vr::VRInput()->GetDigitalActionData(actionRightMenu, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-        if (actionData.bActive && actionData.bChanged && actionData.bState)
-        {
-            states->showHandUI2[VRContext::Hand_Left] = false;
-            states->showHandUI2[VRContext::Hand_Right] = true;
-            // drawing Overlay from now, no need to process more
-            return;
-        }
-
-        // handle left trackpad
-        {
-            std::array<float, 3> moveSteps = { 0 };
-            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadNClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[2] = +AppStates::moveSensity;
-            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadSClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[2] = -AppStates::moveSensity;
-            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadWClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[0] = -AppStates::moveSensity;
-            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadEClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) moveSteps[0] = +AppStates::moveSensity;
-            states->camera.move(moveSteps[0], moveSteps[1], moveSteps[2]);
-        }
-
-        // handle right trigger
-        vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-        onRightHandTriggerActed(actionData);
-    }
 }
 
-void kouek::VREventHandler::onRightHandTriggerActed(
+void kouek::VREventHandler::onLeftHandTriggerPulled(
+    const vr::InputAnalogActionData_t& actionDat)
+{
+    static glm::vec4 lastPos = states->hand2[VRContext::Hand_Left].transform[3];
+    static bool lastPressed = false;
+    if (!actionDat.bActive) return;
+
+    bool pressed = actionDat.x != 0;
+    if (pressed && lastPressed)
+    {
+        glm::vec4 dlt = states->hand2[VRContext::Hand_Left].transform[3];
+        dlt = dlt - lastPos;
+        dlt = states->camera.getViewMat(vr::Eye_Left) * dlt;
+        glm::vec3 drc = dlt;
+        drc = glm::normalize(dlt) * AppStates::subrgnMoveSensity;
+        states->subrgn.center += drc;
+        states->renderer->setSubregion(states->subrgn);
+        lastPos = states->hand2[VRContext::Hand_Left].transform[3];
+    }
+    lastPressed = pressed;
+    lastPos = states->hand2[VRContext::Hand_Left].transform[3];
+}
+
+void kouek::VREventHandler::onRightHandTriggerPressed(
     const vr::InputDigitalActionData_t& actionDat)
 {
     states->game.shouldSelectVertex = false;
@@ -301,7 +362,7 @@ void kouek::VREventHandler::onRightHandTriggerActed(
 
     static bool pressed = false;
     static glm::vec3 lastPos;
-    auto canAddVertex = [&](const glm::vec3& pos) -> bool {
+    auto isDistBigEnough = [&](const glm::vec3& pos) -> bool {
         glm::vec3 diff = states->game.intrctPos - lastPos;
         float distSqr = glm::dot(diff, diff);
         return distSqr >= AppStates::minDistSqrBtwnVerts;
@@ -332,14 +393,13 @@ void kouek::VREventHandler::onRightHandTriggerActed(
         else if (actionDat.bChanged && !actionDat.bState)
         {
             GLuint id = states->pathRenderer->getSelectedVertID();
-            if (canAddVertex(states->game.intrctPos))
-                id = states->pathRenderer->addVertex(states->game.intrctPos);
+            id = states->pathRenderer->addVertex(states->game.intrctPos);
             states->pathRenderer->endSubPath();
             states->pathRenderer->startVertex(id);
             lastPos = states->game.intrctPos;
             pressed = false;
         }
-        else if (actionDat.bState && canAddVertex(states->game.intrctPos))
+        else if (actionDat.bState && isDistBigEnough(states->game.intrctPos))
         {
             auto id = states->pathRenderer->addVertex(states->game.intrctPos);
             states->pathRenderer->startVertex(id);

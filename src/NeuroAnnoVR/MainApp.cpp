@@ -135,7 +135,16 @@ static std::unique_ptr<WireFrame> createGizmo()
 	return std::make_unique<WireFrame>(verts);
 }
 
-static std::unique_ptr<WireFrame> createAnnotationBall()
+static std::unique_ptr<WireFrame> createLaser()
+{
+	std::vector<GLfloat> verts = {
+		+0.f,+0.f,+0.0f, 1.f,.5f,.5f,
+		+0.f,+0.f,-30.f, 1.f,.5f,.5f
+	};
+	return std::make_unique<WireFrame>(verts);
+}
+
+static std::unique_ptr<WireFrame> createBall()
 {
 	std::vector<GLfloat> verts = {
 		// cube
@@ -156,7 +165,8 @@ static std::unique_ptr<WireFrame> createAnnotationBall()
 }
 
 static void initVolumeRender(
-	VolumeRenderType& volumeRender, std::shared_ptr<AppStates> states)
+	VolumeRenderType& volumeRender,
+	const glm::vec3& bkGrndCol, std::shared_ptr<AppStates> states)
 {
 	{
 		CompVolumeMonoEyeRenderer::CUDAParameter param;
@@ -195,7 +205,7 @@ static void initVolumeRender(
 		param.kd = 0.8f;
 		param.ks = 0.5f;
 		param.shininess = 64.f;
-		param.bkgrndColor = { .2f,.3f,.4f,.1f };
+		param.bkgrndColor = glm::vec4{ bkGrndCol, 0.f };
 		volumeRender.renderer->setLightParam(param);
 	}
 	{
@@ -240,7 +250,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	// init Volume and GL Resource ====>
 	shaders = std::make_unique<Shaders>();
 	
-	initVolumeRender(volumeRender, states);
+	initVolumeRender(volumeRender, bkGrndCol, states);
 	states->renderer = volumeRender.renderer.get();
 
 	pathRenderer = std::make_unique<GLPathRenderer>();
@@ -254,7 +264,9 @@ kouek::MainApp::MainApp(int argc, char** argv)
 
 	gizmo.model = createGizmo();
 
-	annoBall.model = createAnnotationBall();
+	laser.model = createLaser();
+
+	ball.model = createBall();
 
 	intrctPoint.model = std::make_unique<Point>();
 	intrctPoint.model->setColorData(GLPathRenderer::selectedVertColor);
@@ -298,10 +310,8 @@ kouek::MainApp::MainApp(int argc, char** argv)
 		submitFramebuffer2[vr::Eye_Right].FBO, states->HMDRenderSizePerEye);
 
 	{
-		states->camera.setHeadPos(
-			glm::vec3(states->subrgn.halfW,
-				states->subrgn.halfH,
-				states->subrgn.halfD * 4.f));
+		states->cameraMountPos = glm::vec3(0, -.6f, 0);
+		states->camera.setHeadPos(states->cameraMountPos);
 
 		gizmo.transform = glm::scale(glm::identity<glm::mat4>(),
 			glm::vec3(states->subrgn.halfW * 2,
@@ -376,26 +386,75 @@ int kouek::MainApp::run()
 
 void kouek::MainApp::drawUI()
 {
+	if (states->hand2[VRContext::Hand_Right].show)
+	{
+		// compute intersection pos of laser and UI plane
+		glm::vec3 uiCntr = glm::vec3(states->handUITransform[3]);
+		{
+			glm::vec3 ori = glm::vec3(states->hand2[VRContext::Hand_Right].transform[3]);
+			glm::vec3 drc = -glm::vec3(states->hand2[VRContext::Hand_Right].transform[2]);
+			glm::vec3 n = glm::vec3(states->handUITransform[2]);
+			float t = (glm::dot(n, uiCntr) - glm::dot(n, ori)) / glm::dot(n, drc);
+			laser.intersectPos = ori + t * drc;
+
+			laser.projectedPos = VP2[vr::Eye_Left] * glm::vec4{ laser.intersectPos, 1.f };
+			laser.projectedPos /= laser.projectedPos.w;
+			intrctPoint.model->setPosData(laser.projectedPos);
+		}
+
+		// convert intersection pos to normalized cursor pos
+		{
+			auto R = glm::normalize(glm::vec3(states->handUITransform[0]));
+			auto U = glm::normalize(glm::vec3(states->handUITransform[1]));
+			glm::vec3 tmp = uiCntr - R + U;
+			tmp = laser.intersectPos - tmp;
+			states->laserMouseNormPos.x = glm::dot(tmp, R) * +.5f;
+			states->laserMouseNormPos.y = glm::dot(tmp, U) * -.5f;
+		}
+	}
+	VRContext::forEyesDo([&](uint8_t eyeIdx) {
+		handUIMVP2[eyeIdx] = VP2[eyeIdx] * states->handUITransform;
+		VRContext::forHandsDo([&](uint8_t hndIdx) {
+			if (states->hand2[hndIdx].show)
+				handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
+				* states->hand2[hndIdx].transform;
+			});
+		});
+
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_MULTISAMPLE);
-	glClearColor(0.f, 0.f, 0.f, 1.f);
-
-	shaders->diffuseShader.program.bind();
+	glDisable(GL_BLEND);
+	glClearColor(bkGrndCol.r, bkGrndCol.g, bkGrndCol.b, 1.f);
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
-		handUIMVP2[eyeIdx] = glm::translate(
-			glm::identity<glm::mat4>(), states->UITranslate);
-		handUIMVP2[eyeIdx] = VP2[eyeIdx] * handUIMVP2[eyeIdx];
-
 		glBindFramebuffer(GL_FRAMEBUFFER, colorFramebuffer2[eyeIdx].FBO);
 		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		if (states->hand2[VRContext::Hand_Right].show
+			&& states->laserMouseNormPos.x >= 0 && states->laserMouseNormPos.y >= 0
+			&& states->laserMouseNormPos.x < 1.f && states->laserMouseNormPos.y < 1.f)
+		{
+			shaders->colorShader.program.bind();
+			glUniformMatrix4fv(
+				shaders->colorShader.matPos, 1, GL_FALSE,
+				(GLfloat*)&handMVP22[eyeIdx][VRContext::Hand_Right]);
+			laser.model->draw();
+
+			if (eyeIdx == vr::Eye_Left)
+			{
+				glUniformMatrix4fv(
+					shaders->colorShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&identity);
+				glPointSize(GLPathRenderer::selectedVertSize);
+				intrctPoint.model->draw();
+				glPointSize(1.f);
+			}
+		}
+
+		shaders->diffuseShader.program.bind();
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
 			if (states->hand2[hndIdx].show)
 			{
-				handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
-					* states->hand2[hndIdx].transform;
-
 				glUniformMatrix4fv(
 					shaders->diffuseShader.matPos, 1, GL_FALSE,
 					(GLfloat*)&handMVP22[eyeIdx][hndIdx]);
@@ -405,7 +464,7 @@ void kouek::MainApp::drawUI()
 			{
 				glUniformMatrix4fv(
 					shaders->diffuseShader.matPos, 1, GL_FALSE,
-					(GLfloat*)&handUIMVP2[hndIdx]);
+					(GLfloat*)&handUIMVP2[eyeIdx]);
 				glBindVertexArray(handUIQuad[hndIdx].VAO);
 				glBindTexture(GL_TEXTURE_2D, qtEvntHndler->getHandUITex(hndIdx));
 				glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
@@ -428,33 +487,32 @@ void kouek::MainApp::drawUI()
 
 void kouek::MainApp::drawScene()
 {
-	static auto identity = glm::identity<glm::mat4>();
-	if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+	if (states->hand2[VRContext::Hand_Right].show)
 	{
-		auto& handZ = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[2];
-		auto& handPos = states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].transform[3];
+		auto& handZ = states->hand2[VRContext::Hand_Right].transform[2];
+		auto& handPos = states->hand2[VRContext::Hand_Right].transform[3];
 		glm::vec3 ballPos = handPos - ANNO_BALL_DIST_FROM_HAND * handZ;
 		states->game.intrctParam.dat.ball.startPos.x = ballPos.x - ANNO_BALL_RADIUS;
 		states->game.intrctParam.dat.ball.startPos.y = ballPos.y - ANNO_BALL_RADIUS;
 		states->game.intrctParam.dat.ball.startPos.z = ballPos.z - ANNO_BALL_RADIUS;
-		anno.ball.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
-		anno.ball.transform = glm::scale(anno.ball.transform, glm::vec3{ ANNO_BALL_DIAMETER });
+		ball.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
+		ball.transform = glm::scale(ball.transform, glm::vec3{ ANNO_BALL_DIAMETER });
 
-		anno.ball.projectedPos = VP2[0] * glm::vec4{ ballPos,1.f };
-		anno.ball.projectedPos /= anno.ball.projectedPos.w;
+		ball.projectedPos = VP2[vr::Eye_Left] * glm::vec4{ ballPos,1.f };
+		ball.projectedPos /= ball.projectedPos.w;
 
-		anno.ball.screenPos.x = .5f * (anno.ball.projectedPos.x + 1.f);
-		anno.ball.screenPos.y = .5f * (anno.ball.projectedPos.y + 1.f);
+		ball.screenPos.x = .5f * (ball.projectedPos.x + 1.f);
+		ball.screenPos.y = .5f * (ball.projectedPos.y + 1.f);
 		if (states->game.shouldSelectVertex
-			&& anno.ball.screenPos.x >= 0 && anno.ball.screenPos.x < 1.f
-			&& anno.ball.screenPos.y >= 0 && anno.ball.screenPos.y < 1.f)
+			&& ball.screenPos.x >= 0 && ball.screenPos.x < 1.f
+			&& ball.screenPos.y >= 0 && ball.screenPos.y < 1.f)
 		{
 			std::array<GLubyte, 4> id4;
 			glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
 			glPixelStorei(GL_PACK_ALIGNMENT, 1);
 			glReadPixels(
-				(GLint)floor(states->HMDRenderSizePerEye[0] * anno.ball.screenPos.x),
-				(GLint)floor(states->HMDRenderSizePerEye[1] * anno.ball.screenPos.y),
+				(GLint)floor(states->HMDRenderSizePerEye[0] * ball.screenPos.x),
+				(GLint)floor(states->HMDRenderSizePerEye[1] * ball.screenPos.y),
 				1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id4.data());
 			GLuint vertID = (GLuint)id4[0]
 				| ((GLuint)id4[1] << 8)
@@ -466,7 +524,7 @@ void kouek::MainApp::drawScene()
 	}
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		gizmoMVP2[eyeIdx] = VP2[eyeIdx] * gizmo.transform;
-		anno.ball.MVP2[eyeIdx] = VP2[eyeIdx] * anno.ball.transform;
+		ball.MVP2[eyeIdx] = VP2[eyeIdx] * ball.transform;
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
 			handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
 				* states->hand2[hndIdx].transform;
@@ -489,12 +547,12 @@ void kouek::MainApp::drawScene()
 			gizmo.model->draw();
 		}
 
-		if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+		if (states->hand2[VRContext::Hand_Right].show)
 		{
 			glUniformMatrix4fv(
 				shaders->depthShader.matPos, 1, GL_FALSE,
-				(GLfloat*)&anno.ball.MVP2[eyeIdx]);
-			annoBall.model->draw();
+				(GLfloat*)&ball.MVP2[eyeIdx]);
+			ball.model->draw();
 		}
 
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
@@ -559,12 +617,12 @@ void kouek::MainApp::drawScene()
 			gizmo.model->draw();
 		}
 
-		if (states->hand2[static_cast<uint8_t>(VRContext::HandEnum::Right)].show)
+		if (states->hand2[VRContext::Hand_Right].show)
 		{
 			glUniformMatrix4fv(
 				shaders->colorShader.matPos, 1, GL_FALSE,
-				(GLfloat*)&anno.ball.MVP2[eyeIdx]);
-			annoBall.model->draw();
+				(GLfloat*)&ball.MVP2[eyeIdx]);
+			ball.model->draw();
 		}
 
 		if (static_cast<uint32_t>(states->game.intrctActMode) & (
@@ -626,7 +684,7 @@ void kouek::MainApp::drawScene()
 	else
 	{
 		volumeRender.renderer->render(nullptr, states->renderTar);
-		intrctPoint.model->setPosData(glm::vec3(anno.ball.projectedPos));
+		intrctPoint.model->setPosData(glm::vec3(ball.projectedPos));
 	}
 
 	glDisable(GL_DEPTH_TEST);

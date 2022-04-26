@@ -7,7 +7,9 @@ add_executable(
 	${TARGET_NAME}
 	${SRCS} ${GUI_SRCS}
 	# Necessary! Or it won't be MOC
-	"./GUI/EditorWindow.ui" "./GUI/LeftHandUI.ui"
+	"./GUI/EditorWindow.ui"
+	"./GUI/LeftHandUI.ui"
+	"./GUI/RightHandUI.ui"
 	"${THIRDPARTY_DIR}/glad/src/glad.c"
  "MainApp.h")
 target_include_directories(

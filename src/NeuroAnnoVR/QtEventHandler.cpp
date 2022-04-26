@@ -3,18 +3,20 @@
 #include <QtWidgets/qapplication.h>
 #include <QtWidgets/qgraphicssceneevent.h>
 
-kouek::HandUIHandler::HandUIHandler(EditorWindow* glCtxProvider)
-	:glCtxProvider(glCtxProvider)
+kouek::HandUIHandler::HandUIHandler(
+	EditorWindow* glCtxProvider, AppStates* states)
+	:glCtxProvider(glCtxProvider), states(states)
 {
 	glCtxProvider->getVRView()->makeCurrent();
+	ellipse = new QGraphicsEllipseItem(0, 0, 5.f, 5.f);
 
 	wdgt2[VRContext::Hand_Left] = new LeftHandUI();
-	wdgt2[VRContext::Hand_Right] = new LeftHandUI();
+	wdgt2[VRContext::Hand_Right] = new RightHandUI();
 
 	VRContext::forHandsDo([&](uint8_t hndIdx) {
 		wdgt2[hndIdx]->move(0, 0);
 		scn2[hndIdx] = new QGraphicsScene();
-		scn2[hndIdx]->addWidget(wdgt2[VRContext::Hand_Left]);
+		scn2[hndIdx]->addWidget(wdgt2[hndIdx]);
 
 		FBO2[hndIdx] = new QOpenGLFramebufferObject(
 			wdgt2[hndIdx]->size(), GL_TEXTURE_2D);
@@ -23,8 +25,10 @@ kouek::HandUIHandler::HandUIHandler(EditorWindow* glCtxProvider)
 		pntr2[hndIdx] = new QPainter(glDvc2[hndIdx]);
 		});
 
-	QObject::connect(scn2[0], &QGraphicsScene::changed,
+	QObject::connect(scn2[VRContext::Hand_Left], &QGraphicsScene::changed,
 		this, &HandUIHandler::onLeftHandSceneChanged);
+	QObject::connect(scn2[VRContext::Hand_Right], &QGraphicsScene::changed,
+		this, &HandUIHandler::onRightHandSceneChanged);
 
 	timer = new QTimer(this);
 	QObject::connect(timer, &QTimer::timeout, this, &HandUIHandler::onTimeOut);
@@ -33,12 +37,106 @@ kouek::HandUIHandler::HandUIHandler(EditorWindow* glCtxProvider)
 
 kouek::HandUIHandler::~HandUIHandler()
 {
-
 }
 
 void kouek::HandUIHandler::onTimeOut()
 {
-	onLeftHandSceneChanged(QList<QRectF>());
+	static auto isMouseInRange = [&](const glm::vec2& normPos) -> bool {
+		if (normPos.x < 0 || normPos.y < 0
+			|| normPos.x >= 1.f || normPos.y >= 1.f)
+			return false;
+		return true;
+	};
+	while (!states->laserMouseMsgQue.modes.empty())
+	{
+		auto mode = states->laserMouseMsgQue.modes.front();
+		auto normPos = states->laserMouseMsgQue.positions.front();
+		states->laserMouseMsgQue.modes.pop();
+		states->laserMouseMsgQue.positions.pop();
+		switch (mode)
+		{
+		case LaserMouseMode::MousePressed:
+			if (!isMouseInRange(normPos)) break;
+			{
+				lastMouseButtons |= Qt::LeftButton;
+
+				QPoint glblPt = lastMousePos.toPoint();
+				QGraphicsSceneMouseEvent mouseEvent(QEvent::GraphicsSceneMousePress);
+				mouseEvent.setWidget(NULL);
+				mouseEvent.setPos(lastMousePos);
+				mouseEvent.setButtonDownPos(Qt::LeftButton, lastMousePos);
+				mouseEvent.setButtonDownScenePos(Qt::LeftButton, glblPt);
+				mouseEvent.setButtonDownScreenPos(Qt::LeftButton, glblPt);
+				mouseEvent.setScenePos(glblPt);
+				mouseEvent.setScreenPos(glblPt);
+				mouseEvent.setLastPos(lastMousePos);
+				mouseEvent.setLastScenePos(glblPt);
+				mouseEvent.setLastScreenPos(glblPt);
+				mouseEvent.setButtons(lastMouseButtons);
+				mouseEvent.setButton(Qt::LeftButton);
+				mouseEvent.setModifiers(0);
+				mouseEvent.setAccepted(false);
+
+				QApplication::sendEvent(states->showHandUI2[VRContext::Hand_Left] ?
+					scn2[VRContext::Hand_Left] : scn2[VRContext::Hand_Right], &mouseEvent);
+			}
+			break;
+		case LaserMouseMode::MouseMoved:
+			if (!isMouseInRange(normPos)) break;
+			{
+				auto [scn, wdgt] = states->showHandUI2[VRContext::Hand_Left] ?
+					std::tuple{ scn2[VRContext::Hand_Left],wdgt2[VRContext::Hand_Left] }
+				: std::tuple{ scn2[VRContext::Hand_Right],wdgt2[VRContext::Hand_Right] };
+
+				QPointF newMousePos(normPos.x * scn->width(), normPos.y * scn->height());
+				/*ellipse->setPos(newMousePos);*/
+				QPoint glblPt = newMousePos.toPoint();
+				QGraphicsSceneMouseEvent mouseEvent(QEvent::GraphicsSceneMouseMove);
+				mouseEvent.setWidget(NULL);
+				mouseEvent.setPos(newMousePos);
+				mouseEvent.setScenePos(glblPt);
+				mouseEvent.setScreenPos(glblPt);
+				mouseEvent.setLastPos(lastMousePos);
+				mouseEvent.setLastScenePos(wdgt->mapToGlobal(lastMousePos.toPoint()));
+				mouseEvent.setLastScreenPos(wdgt->mapToGlobal(lastMousePos.toPoint()));
+				mouseEvent.setButtons(lastMouseButtons);
+				mouseEvent.setButton(Qt::NoButton);
+				mouseEvent.setModifiers(0);
+				mouseEvent.setAccepted(false);
+
+				lastMousePos = newMousePos;
+				QApplication::sendEvent(scn, &mouseEvent);
+				if (states->showHandUI2[VRContext::Hand_Left])
+					onLeftHandSceneChanged(QList<QRectF>());
+				else
+					onRightHandSceneChanged(QList<QRectF>());
+			}
+			break;
+		case LaserMouseMode::MouseReleased:
+			if (!isMouseInRange(normPos)) break;
+			{
+				lastMouseButtons &= ~Qt::LeftButton;
+
+				QPoint glblPt = lastMousePos.toPoint();
+				QGraphicsSceneMouseEvent mouseEvent(QEvent::GraphicsSceneMouseRelease);
+				mouseEvent.setWidget(NULL);
+				mouseEvent.setPos(lastMousePos);
+				mouseEvent.setScenePos(glblPt);
+				mouseEvent.setScreenPos(glblPt);
+				mouseEvent.setLastPos(lastMousePos);
+				mouseEvent.setLastScenePos(glblPt);
+				mouseEvent.setLastScreenPos(glblPt);
+				mouseEvent.setButtons(lastMouseButtons);
+				mouseEvent.setButton(Qt::LeftButton);
+				mouseEvent.setModifiers(0);
+				mouseEvent.setAccepted(false);
+
+				QApplication::sendEvent(states->showHandUI2[VRContext::Hand_Left] ?
+					scn2[VRContext::Hand_Left] : scn2[VRContext::Hand_Right], &mouseEvent);
+			}
+			break;
+		}
+	}
 }
 
 void kouek::HandUIHandler::onLeftHandSceneChanged(const QList<QRectF>& region)
@@ -51,10 +149,20 @@ void kouek::HandUIHandler::onLeftHandSceneChanged(const QList<QRectF>& region)
 	pntr2[VRContext::Hand_Left]->beginNativePainting();
 }
 
+void kouek::HandUIHandler::onRightHandSceneChanged(const QList<QRectF>& region)
+{
+	glCtxProvider->getVRView()->makeCurrent();
+	pntr2[VRContext::Hand_Right]->endNativePainting();
+	FBO2[VRContext::Hand_Right]->bind();
+	scn2[VRContext::Hand_Right]->render(pntr2[VRContext::Hand_Right]);
+	FBO2[VRContext::Hand_Right]->release();
+	pntr2[VRContext::Hand_Right]->beginNativePainting();
+}
+
 kouek::QtEventHandler::QtEventHandler(
 	EditorWindow* sender,
 	std::shared_ptr<AppStates> sharedStates)
-	: EventHandler(sharedStates), handUI(sender)
+	: EventHandler(sharedStates), handUI(sender, sharedStates.get())
 {
 	QObject::connect(sender, &EditorWindow::closed, [&]() {
 		states->canRun = false;
@@ -107,20 +215,20 @@ kouek::QtEventHandler::QtEventHandler(
 				// Subregion Control
 			case Qt::Key_W:
 				if (functionKey == Qt::Key_Control)
-					subrgnMoveSteps[1] = +AppStates::moveSensity;
+					subrgnMoveSteps[1] = +AppStates::subrgnMoveSensity;
 				else
-					subrgnMoveSteps[2] = +AppStates::moveSensity;
+					subrgnMoveSteps[2] = +AppStates::subrgnMoveSensity;
 				break;
 			case Qt::Key_S:
 				if (functionKey == Qt::Key_Control)
-					subrgnMoveSteps[1] = -AppStates::moveSensity;
+					subrgnMoveSteps[1] = -AppStates::subrgnMoveSensity;
 				else
-					subrgnMoveSteps[2] = -AppStates::moveSensity;
+					subrgnMoveSteps[2] = -AppStates::subrgnMoveSensity;
 				break;
 			case Qt::Key_D:
-				subrgnMoveSteps[0] = +AppStates::moveSensity; break;
+				subrgnMoveSteps[0] = +AppStates::subrgnMoveSensity; break;
 			case Qt::Key_A:
-				subrgnMoveSteps[0] = -AppStates::moveSensity; break;
+				subrgnMoveSteps[0] = -AppStates::subrgnMoveSensity; break;
 				// Interaction Control
 			case Qt::Key_1:
 				states->game.intrctActMode = InteractionActionMode::SelectVertex; break;
@@ -139,6 +247,20 @@ kouek::QtEventHandler::QtEventHandler(
 				states->showHandUI2[VRContext::Hand_Right] = !states->showHandUI2[VRContext::Hand_Right];
 				states->showHandUI2[VRContext::Hand_Left] = false;
 				break;
+			}
+		});
+	// LeftHandUI
+	// RightHandUI
+	QObject::connect(dynamic_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
+		&RightHandUI::interactionActionModeBtnsClicked, [&](int id) {
+			switch (id)
+			{
+			case 0:
+				states->game.intrctActMode = InteractionActionMode::SelectVertex; break;
+			case 1:
+				states->game.intrctActMode = InteractionActionMode::AddPath; break;
+			case 2:
+				states->game.intrctActMode = InteractionActionMode::AddVertex; break;
 			}
 		});
 }

@@ -61,7 +61,7 @@ namespace kouek
 		Subregion subrgn;
 		CompVolumeRendererCUDA::CompVolumeParameter compVolumeParam;
 		std::unique_ptr<CompVolumeRendererCUDA::RenderParameter> renderParam;
-		std::unordered_map<std::array<uint32_t, 3>, vs::AABB, Hash_UInt32Array3> blockToAABBs;
+		std::unordered_map<std::array<uint32_t, 3>, vs::AABB, Hash_UInt32Array3> blockAABBs;
 		std::unordered_set<std::array<uint32_t, 4>, Hash_UInt32Array4> needBlocks, currNeedBlocks;
 		std::unordered_set<std::array<uint32_t, 4>, Hash_UInt32Array4> loadBlocks, unloadBlocks;
 

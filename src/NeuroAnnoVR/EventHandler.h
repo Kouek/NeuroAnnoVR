@@ -2,6 +2,8 @@
 #define KOUEK_EVENT_HANDLER_H
 
 #include <array>
+#include <queue>
+
 #include <openvr.h>
 
 #include <renderer/Renderer.h>
@@ -40,10 +42,18 @@ namespace kouek
 		JoinPath = 0xC
 	};
 
+	enum class LaserMouseMode : uint8_t
+	{
+		None = 0,
+		MouseMoved,
+		MousePressed,
+		MouseReleased
+	};
+
 	struct Game
 	{
 		bool shouldSelectVertex = false;
-		MoveMode gameMode = MoveMode::Wander;
+		MoveMode moveMode = MoveMode::Wander;
 		InteractionActionMode intrctActMode = InteractionActionMode::SelectVertex;
 		glm::vec3 intrctPos;
 		CompVolumeFAVRRenderer::InteractionParameter intrctParam;
@@ -52,6 +62,12 @@ namespace kouek
 			intrctParam.mode = CompVolumeFAVRRenderer::InteractionMode::AnnotationBall;
 			intrctParam.dat.ball.AABBSize = glm::vec3{ ANNO_BALL_DIAMETER };
 		}
+	};
+
+	struct LaserMouseMessageQue
+	{
+		std::queue<glm::vec2> positions;
+		std::queue<LaserMouseMode> modes;
 	};
 
 	struct AppStates
@@ -66,16 +82,22 @@ namespace kouek
 		bool showGizmo = false;
 		float nearClip = 0.01f, farClip = 10.f;
 		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
+
 		std::array<uint32_t, 2> HMDRenderSizePerEye = { 1080,1080 };
-		glm::vec3 UITranslate;
 		std::array<glm::mat4, vr::k_unMaxTrackedDeviceCount> devicePoses;
 		std::array<glm::mat4, 2> projection2;
 		std::array<glm::mat4, 2> unProjection2;
 		std::array<glm::mat4, 2> eyeToHMD2;
+
+		glm::vec2 laserMouseNormPos;
+		glm::vec3 cameraMountPos;
+		glm::mat4 handUITransform;
+
 		DualEyeCamera camera;
 		CompVolumeRenderer::Subregion subrgn;
 		Hand hand2[2];
 		Game game;
+		LaserMouseMessageQue laserMouseMsgQue;
 
 		CompVolumeFAVRRenderer* renderer = nullptr;
 		GLPathRenderer* pathRenderer = nullptr;

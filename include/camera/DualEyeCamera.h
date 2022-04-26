@@ -83,7 +83,33 @@ namespace kouek
 				view[eyeIdx][3][2] = glm::dot(forward, eyePos2[eyeIdx]);
 				});
 		}
-		inline void setSelfRotation(const glm::mat4& rotation)
+		inline void setPosture(const glm::mat4& posture)
+		{
+			this->right = { posture[0].x,posture[0].y ,posture[0].z };
+			this->up = { posture[1].x,posture[1].y ,posture[1].z };
+			this->forward = { -posture[2].x,-posture[2].y ,-posture[2].z };
+			this->headPos = { posture[3].x,posture[3].y,posture[3].z };
+
+			VRContext::forEyesDo([&](uint8_t eyeIdx) {
+				eyePos2[eyeIdx] = headPos - dist2[eyeIdx].z * forward
+					+ dist2[eyeIdx].y * up
+					+ dist2[eyeIdx].x * right;
+
+				view[eyeIdx][0][0] = right.x;
+				view[eyeIdx][1][0] = right.y;
+				view[eyeIdx][2][0] = right.z;
+				view[eyeIdx][0][1] = up.x;
+				view[eyeIdx][1][1] = up.y;
+				view[eyeIdx][2][1] = up.z;
+				view[eyeIdx][0][2] = -forward.x;
+				view[eyeIdx][1][2] = -forward.y;
+				view[eyeIdx][2][2] = -forward.z;
+				view[eyeIdx][3][0] = -glm::dot(right, eyePos2[eyeIdx]);
+				view[eyeIdx][3][1] = -glm::dot(up, eyePos2[eyeIdx]);
+				view[eyeIdx][3][2] = glm::dot(forward, eyePos2[eyeIdx]);
+				});
+		}
+		inline void setSelfRotation(const glm::mat3& rotation)
 		{
 			this->right = { rotation[0].x,rotation[0].y ,rotation[0].z };
 			this->up = { rotation[1].x,rotation[1].y ,rotation[1].z };

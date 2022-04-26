@@ -76,7 +76,7 @@ void kouek::CompVolumeMonoEyeRendererImpl::render()
 				renderParam->subrgn.halfD);
 			// AABB filter first
 			vs::AABB subrgnAABB = subrgnOBB.getAABB();
-			for (auto& blockAABB : blockToAABBs)
+			for (auto& blockAABB : blockAABBs)
 				if (subrgnAABB.intersect(blockAABB.second))
 					currNeedBlocks.emplace(
 						std::array{ blockAABB.first[0],
@@ -84,7 +84,7 @@ void kouek::CompVolumeMonoEyeRendererImpl::render()
 			// OBB filter then
 			for (auto itr = currNeedBlocks.begin(); itr != currNeedBlocks.end();)
 				if (!subrgnOBB.intersect_obb(
-					blockToAABBs[std::array{ (*itr)[0],(*itr)[1],(*itr)[2] }]
+					blockAABBs[std::array{ (*itr)[0],(*itr)[1],(*itr)[2] }]
 					.convertToOBB())
 					)
 					currNeedBlocks.erase(itr++);

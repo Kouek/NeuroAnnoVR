@@ -24,6 +24,9 @@ namespace kouek
 	class MainApp
 	{
 	private:
+		static inline constexpr auto bkGrndCol = glm::vec3{ .5f,.5f,.5f };
+		static inline constexpr auto identity = glm::identity<glm::mat4>();
+
 		std::shared_ptr<AppStates> states;
 		std::unique_ptr<QApplication> qtApp;
 		std::unique_ptr<EditorWindow> editorWindow;
@@ -32,26 +35,26 @@ namespace kouek
 		std::unique_ptr<GLPathRenderer> pathRenderer;
 		std::unique_ptr<Shaders> shaders;
 
-		std::array<glm::mat4, 2> VP2;
 		std::array<glm::mat4, 2> handUIMVP2;
+		std::array<glm::mat4, 2> VP2;
 		std::array<glm::mat4, 2> gizmoMVP2;
 		std::array<std::array<glm::mat4, 2>, 2> handMVP22;
-
-		union
-		{
-			struct
-			{
-				glm::vec4 projectedPos;
-				glm::vec2 screenPos;
-				std::array<glm::mat4, 2> MVP2;
-				glm::mat4 transform;
-			}ball;
-		}anno;
 
 		struct
 		{
 			std::unique_ptr<WireFrame> model;
-		}annoBall;
+			glm::vec3 intersectPos;
+			glm::vec4 projectedPos;
+		}laser;
+
+		struct
+		{
+			glm::vec4 projectedPos;
+			glm::vec2 screenPos;
+			std::array<glm::mat4, 2> MVP2;
+			glm::mat4 transform;
+			std::unique_ptr<WireFrame> model;
+		}ball;
 
 		VolumeRenderType volumeRender;
 

@@ -86,11 +86,11 @@ void kouek::CompVolumeRendererImpl::setVolume(
 			texObj.data(), texObj.size());
 	}
 
-	blockToAABBs.clear(); // avoid conflict caused by Volume reset
+	blockAABBs.clear(); // avoid conflict caused by Volume reset
 	for (uint32_t z = 0; z < compVolumeParam.LOD0BlockDim.z; ++z)
 		for (uint32_t y = 0; y < compVolumeParam.LOD0BlockDim.y; ++y)
 			for (uint32_t x = 0; x < compVolumeParam.LOD0BlockDim.x; ++x)
-				blockToAABBs.emplace(
+				blockAABBs.emplace(
 					std::piecewise_construct,
 					std::forward_as_tuple(std::array{ x, y, z }),
 					std::forward_as_tuple(

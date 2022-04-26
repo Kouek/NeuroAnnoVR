@@ -41,8 +41,11 @@ namespace kouek
     private:
         void updateWhenDrawingUI();
         void updateWhenDrawingScene();
-
-        inline void onRightHandTriggerActed(
+        
+        void onHandPosecChanged();
+        void onLeftHandTriggerPulled(
+            const vr::InputAnalogActionData_t& actionDat);
+        void onRightHandTriggerPressed(
             const vr::InputDigitalActionData_t& actionDat);
 	};
 }
