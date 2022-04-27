@@ -171,11 +171,15 @@ void kouek::VREventHandler::update()
     }
     onHandPosecChanged();
 
+    needShowGizmoCnt = 0;
     if (states->showHandUI2[VRContext::Hand_Left]
         || states->showHandUI2[VRContext::Hand_Right])
         updateWhenDrawingUI();
     else
         updateWhenDrawingScene();
+
+    if (needShowGizmoCnt != 0) states->showGizmo = true;
+    else states->showGizmo = false;
 }
 
 
@@ -243,7 +247,6 @@ void kouek::VREventHandler::updateWhenDrawingScene()
         states->handUITransform[2] = glm::vec4{ -F, 0 };
         states->handUITransform[3] = glm::vec4{ pos, 1.f };
     };
-
     // digital action
     {
         vr::InputDigitalActionData_t actionData;
@@ -268,14 +271,41 @@ void kouek::VREventHandler::updateWhenDrawingScene()
             static int32_t lastDeg = 0;
             int32_t dltDeg = 0;
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadWClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) dltDeg += 10;
+            if (actionData.bActive && actionData.bState) dltDeg += 1;
             vr::VRInput()->GetDigitalActionData(actionLeftTrackpadEClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-            if (actionData.bActive && actionData.bState) dltDeg -= 10;
+            if (actionData.bActive && actionData.bState) dltDeg -= 1;
             if (dltDeg != 0)
             {
-                // TODO
+                lastDeg += dltDeg;
+                lastDeg = (lastDeg + 360) % 360;
+                states->subrgn.rotation = glm::rotate(glm::identity<glm::mat4>(),
+                    glm::radians((float)lastDeg), glm::vec3{ 0,1.f,0 });
+                states->gizmoTransform = glm::scale(glm::identity<glm::mat4>(),
+                    glm::vec3(states->subrgn.halfW * 2,
+                        states->subrgn.halfH * 2,
+                        states->subrgn.halfD * 2));
+                auto invTranslation = glm::translate(glm::identity<glm::mat4>(),
+                    glm::vec3(-states->subrgn.halfW,
+                        -states->subrgn.halfH,
+                        -states->subrgn.halfD));
+                auto translation = glm::translate(glm::identity<glm::mat4>(),
+                    glm::vec3(states->subrgn.halfW,
+                        states->subrgn.halfH,
+                        states->subrgn.halfD));
+                auto TRInvT = translation * states->subrgn.rotation
+                    * invTranslation;
+                states->gizmoTransform = TRInvT * states->gizmoTransform;
+                states->subrgn.fromWorldToSubrgn =
+                    Math::inversePose(TRInvT);
+
+                states->renderer->setSubregion(states->subrgn);
+                ++needShowGizmoCnt;
             }
         }
+        // handle left trigger
+        vr::VRInput()->GetDigitalActionData(actionLeftTriggerClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bState) isSubrgnMoveFine = true;
+        else isSubrgnMoveFine = false;
         // handle right trigger
         vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         onRightHandTriggerPressed(actionData);
@@ -345,10 +375,13 @@ void kouek::VREventHandler::onLeftHandTriggerPulled(
         dlt = dlt - lastPos;
         dlt = states->camera.getViewMat(vr::Eye_Left) * dlt;
         glm::vec3 drc = dlt;
-        drc = glm::normalize(dlt) * AppStates::subrgnMoveSensity;
+        drc = glm::normalize(dlt) * (isSubrgnMoveFine ?
+            AppStates::subrgnMoveSensityFine : AppStates::subrgnMoveSensity);
         states->subrgn.center += drc;
-        states->renderer->setSubregion(states->subrgn);
         lastPos = states->hand2[VRContext::Hand_Left].transform[3];
+
+        states->renderer->setSubregion(states->subrgn);
+        ++needShowGizmoCnt;
     }
     lastPressed = pressed;
     lastPos = states->hand2[VRContext::Hand_Left].transform[3];
@@ -361,6 +394,7 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
     if (!actionDat.bActive) return;
 
     static bool pressed = false;
+    static bool needCheckDistWhenReleased;
     static glm::vec3 lastPos;
     auto isDistBigEnough = [&](const glm::vec3& pos) -> bool {
         glm::vec3 diff = states->game.intrctPos - lastPos;
@@ -389,14 +423,20 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
             auto id = states->pathRenderer->addSubPath();
             states->pathRenderer->startSubPath(id);
             pressed = true;
+            needCheckDistWhenReleased = false;
         }
         else if (actionDat.bChanged && !actionDat.bState)
         {
             GLuint id = states->pathRenderer->getSelectedVertID();
-            id = states->pathRenderer->addVertex(states->game.intrctPos);
-            states->pathRenderer->endSubPath();
-            states->pathRenderer->startVertex(id);
-            lastPos = states->game.intrctPos;
+            if (needCheckDistWhenReleased ? isDistBigEnough(states->game.intrctPos) : true)
+            {
+                id = states->pathRenderer->addVertex(states->game.intrctPos);
+                states->pathRenderer->endSubPath();
+                states->pathRenderer->startVertex(id);
+                lastPos = states->game.intrctPos;
+            }
+            else
+                states->pathRenderer->endSubPath();
             pressed = false;
         }
         else if (actionDat.bState && isDistBigEnough(states->game.intrctPos))
@@ -404,6 +444,9 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
             auto id = states->pathRenderer->addVertex(states->game.intrctPos);
             states->pathRenderer->startVertex(id);
             lastPos = states->game.intrctPos;
+            // once a vert is added via drag,
+            // check the dist at released
+            needCheckDistWhenReleased = true;
         }
 		break;
 	default:

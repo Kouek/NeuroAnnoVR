@@ -1,5 +1,5 @@
-#ifndef KOUEK_RENDER_OBJ_H
-#define KOUEK_RENDER_OBJ_H
+#ifndef KOUEK_GL_OBJ_RENDERER_H
+#define KOUEK_GL_OBJ_RENDERER_H
 
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -129,4 +129,4 @@ namespace kouek
     };
 }
 
-#endif // !KOUEK_RENDER_OBJ_H
+#endif // !KOUEK_GL_OBJ_RENDERER_H

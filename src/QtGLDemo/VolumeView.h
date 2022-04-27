@@ -5,6 +5,7 @@
 
 // ensure glad.h is ahead of any QtOpenGL header
 #include <renderer/Renderer.h>
+#include <renderer/GLObjRenderer.h>
 
 #include <QtWidgets/qopenglwidget.h>
 #include <QtGui/qevent.h>
@@ -14,7 +15,6 @@
 
 #include <camera/FPSCamera.h>
 #include <util/Math.h>
-#include <util/RenderObj.h>
 #include <util/VolumeCfg.h>
 
 #define GL_CHECK \

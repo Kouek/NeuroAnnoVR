@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <util/VolumeCfg.h>
+#include <util/SWCConverter.h>
 
 #define GL_CHECK \
          {       \
@@ -187,9 +188,10 @@ static void initVolumeRender(
 		volumeRender.volume->SetSpaceY(cfg.getSpaceY() * scale);
 		volumeRender.volume->SetSpaceZ(cfg.getSpaceZ() * scale);
 		volumeRender.renderer->setStep(1024, cfg.getBaseSpace() * scale * .3f );
-		AppStates::subrgnMoveSensity = AppStates::moveSensity = std::max(
+		AppStates::subrgnMoveSensityFine = AppStates::moveSensity = std::max(
 			volumeRender.volume->GetVolumeSpaceX(),
 			volumeRender.volume->GetVolumeSpaceY());
+		AppStates::subrgnMoveSensity = AppStates::subrgnMoveSensityFine * 5.f;
 		volumeRender.renderer->setVolume(volumeRender.volume);
 		volumeRender.renderer->setTransferFunc(cfg.getTF());
 	}
@@ -262,6 +264,19 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	states->pathRenderer = pathRenderer.get();
 	volumeRender.renderer->setInteractionParam(states->game.intrctParam);
 
+	try
+	{
+		kouek::VolumeConfig cfg(std::string(kouek::PROJECT_SOURCE_DIR)
+			+ "/cfg/VolumeCfg.json");
+		swc = std::make_unique<FileSWC>(cfg.getSWCPath());
+		SWCConverter::appendSWCToGLPathRenderer(*swc, *pathRenderer);
+	}
+	catch (std::exception& e)
+	{
+		spdlog::critical("File: {0}, Line: {1}, Error: {2}", __FILE__,
+			__LINE__, e.what());
+	}
+
 	gizmo.model = createGizmo();
 
 	laser.model = createLaser();
@@ -313,7 +328,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 		states->cameraMountPos = glm::vec3(0, -.6f, 0);
 		states->camera.setHeadPos(states->cameraMountPos);
 
-		gizmo.transform = glm::scale(glm::identity<glm::mat4>(),
+		states->gizmoTransform = glm::scale(glm::identity<glm::mat4>(),
 			glm::vec3(states->subrgn.halfW * 2,
 				states->subrgn.halfH * 2,
 				states->subrgn.halfD * 2));
@@ -327,7 +342,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 				states->subrgn.halfD));
 		auto TRInvT = translation * states->subrgn.rotation
 			* invTranslation;
-		gizmo.transform = TRInvT * gizmo.transform;
+		states->gizmoTransform = TRInvT * states->gizmoTransform;
 
 		states->subrgn.fromWorldToSubrgn =
 			Math::inversePose(TRInvT);
@@ -381,6 +396,9 @@ int kouek::MainApp::run()
 	}
 
 	qtApp->exit();
+
+	if (swc.get() != nullptr)
+		SWCConverter::fromGLPathRendererToSWC(*pathRenderer, *swc);
 	return 0;
 }
 
@@ -519,11 +537,14 @@ void kouek::MainApp::drawScene()
 				| ((GLuint)id4[2] << 16)
 				| ((GLuint)id4[3] << 24);
 			if (vertID != std::numeric_limits<GLuint>::max())
+			{
+				pathRenderer->startPath(pathRenderer->getPathIDOf(vertID));
 				pathRenderer->startVertex(vertID);
+			}
 		}
 	}
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
-		gizmoMVP2[eyeIdx] = VP2[eyeIdx] * gizmo.transform;
+		gizmoMVP2[eyeIdx] = VP2[eyeIdx] * states->gizmoTransform;
 		ball.MVP2[eyeIdx] = VP2[eyeIdx] * ball.transform;
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
 			handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]

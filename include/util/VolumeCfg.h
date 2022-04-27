@@ -18,6 +18,7 @@ namespace kouek
 		float spaceX, spaceY, spaceZ;
 		float baseSpace;
 		std::string resourcePath;
+		std::string SWCPath;
 		nlohmann::json json;
 
 		vs::TransferFunc tf;
@@ -46,8 +47,8 @@ namespace kouek
 				spaceZ = jsonItem[2];
 				baseSpace = min({ spaceX, spaceY, spaceZ });
 
-				jsonItem = json.at("screen").at("0");
-				resourcePath = jsonItem.at("resourcePath");
+				resourcePath = json.at("resourcePath");
+				SWCPath = json.at("PACPath");
 
 				jsonItem = json.at("tf");
 				for (auto& [tfPnt, tfCol] : jsonItem.items())
@@ -66,6 +67,10 @@ namespace kouek
 		const vs::TransferFunc& getTF() const
 		{
 			return tf;
+		}
+		const std::string& getSWCPath() const
+		{
+			return SWCPath;
 		}
 
 #define GETTER(retType, firstChInLowerCase, firstChInUpperCase, successor)                                             \

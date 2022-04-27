@@ -1,16 +1,7 @@
 {
-  "width": 900,
-  "height": 900,
   "space": [ 0.00032, 0.00032, 0.001 ],
-  "row": 1,
-  "col": 1,
-  "screen": {
-    "0": {
-      "offsetX": 0,
-      "offsetY": 0,
-      "resourcePath": "D:/MouseNeuronData/mouse_file_config.json"
-    }
-  },
+  "resourcePath": "D:/MouseNeuronData/mouse_file_config.json",
+  "PACPath": "D:/MouseNeuronData/SWC.txt",
   "tf": {
     "30": [ 0.00, 0.00, 0.00, 0.00 ],
     "35": [ 0.30, 0.60, 1.00, 0.12 ],

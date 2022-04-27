@@ -3,7 +3,9 @@
 
 #include <CMakeIn.h>
 #include <renderer/Renderer.h>
-#include <util/RenderObj.h>
+#include <renderer/GLObjRenderer.h>
+
+#include <util/SWC.h>
 
 #include <QtWidgets/qapplication.h>
 
@@ -32,6 +34,7 @@ namespace kouek
 		std::unique_ptr<EditorWindow> editorWindow;
 		std::unique_ptr<VREventHandler> vrEvntHndler;
 		std::unique_ptr<QtEventHandler> qtEvntHndler;
+		std::unique_ptr<FileSWC> swc;
 		std::unique_ptr<GLPathRenderer> pathRenderer;
 		std::unique_ptr<Shaders> shaders;
 
@@ -60,7 +63,6 @@ namespace kouek
 
 		struct
 		{
-			glm::mat4 transform = glm::identity<glm::mat4>();
 			std::unique_ptr<WireFrame> model;
 		}gizmo;
 

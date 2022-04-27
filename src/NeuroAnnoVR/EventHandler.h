@@ -7,10 +7,10 @@
 #include <openvr.h>
 
 #include <renderer/Renderer.h>
+#include <renderer/GLPathRenderer.h>
 
 #include <camera/DualEyeCamera.h>
 #include <util/Math.h>
-#include <util/GLPathRenderer.h>
 
 namespace kouek
 {
@@ -73,7 +73,8 @@ namespace kouek
 	struct AppStates
 	{
 		static inline float moveSensity = .1f;
-		static inline float subrgnMoveSensity = .1f;
+		static inline float subrgnMoveSensity = .002f;
+		static inline float subrgnMoveSensityFine = .001f;
 		static inline float minDistSqrBtwnVerts = .004f;
 		static inline glm::vec3 UITranslateToHead = glm::vec3{ 0,0,-2.f };
 
@@ -92,6 +93,7 @@ namespace kouek
 		glm::vec2 laserMouseNormPos;
 		glm::vec3 cameraMountPos;
 		glm::mat4 handUITransform;
+		glm::mat4 gizmoTransform;
 
 		DualEyeCamera camera;
 		CompVolumeRenderer::Subregion subrgn;

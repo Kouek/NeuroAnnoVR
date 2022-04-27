@@ -10,6 +10,8 @@ namespace kouek
 	private:
         std::array<char, vr::k_unMaxTrackedDeviceCount> deviceClasses = { 0 };
         int validPoseCnt = 0;
+        uint8_t needShowGizmoCnt;
+        bool isSubrgnMoveFine;
         vr::IVRSystem* HMD;
 
         vr::VRActionSetHandle_t actionsetFocus = vr::k_ulInvalidActionSetHandle;

@@ -69,6 +69,10 @@ namespace kouek
 				glDeleteVertexArrays(1, &VAO);
 				glDeleteBuffers(1, &EBO);
 			}
+			inline const auto getVertexIDs() const
+			{
+				return verts;
+			}
 			inline void addVertex(GLuint vertID)
 			{
 				verts.emplace_back(vertID);
@@ -142,6 +146,14 @@ namespace kouek
 			{
 				glDeleteVertexArrays(1, &VAO);
 			}
+			inline GLuint getRootID() const
+			{
+				return rootID;
+			}
+			inline const auto getSubPaths() const
+			{
+				return subPaths;
+			}
 			inline GLuint addSubPath(GLuint startVertID)
 			{
 				GLuint subPathID = recycledSubpathIDs.empty()
@@ -191,7 +203,9 @@ namespace kouek
 			verts.resize(MAX_VERT_NUM);
 			pathIDOfVerts.resize(MAX_VERT_NUM);
 		}
+
 #undef VERTEX_ARRAY_DEF
+
 		~GLPathRenderer()
 		{
 			glDeleteBuffers(1, &VBO);
@@ -216,6 +230,14 @@ namespace kouek
 		inline GLuint getPathIDOf(GLuint vertID) const
 		{
 			return pathIDOfVerts[vertID];
+		}
+		inline const auto getPaths() const
+		{
+			return paths;
+		}
+		inline const auto getVertexPositions() const
+		{
+			return verts;
 		}
 		inline GLuint addPath(
 			const glm::vec3& color,
