@@ -2,6 +2,8 @@
 #define KOUEK_SWC_H
 
 #include <set>
+#include <string>
+#include <stdexcept>
 #include <fstream>
 
 namespace kouek
@@ -87,6 +89,7 @@ namespace kouek
         {
             accept('\r'); // allow \r\n
             if (accept('\n')) return true;
+            return false;
         }
 
         bool parseLine()
@@ -216,7 +219,7 @@ namespace kouek
         {
             using namespace std;
             ofstream out(filePath, ios::out);
-            if (!out.is_open()) throw runtime_error("Cannot open file: " + filePath);
+            if (!out.is_open()) return;
 
             size_t cnt = 1;
             for (auto& node : nodes)
@@ -230,6 +233,9 @@ namespace kouek
         }
         void add(const SWCNode& node) override
         {
+            auto itr = nodes.find(node);
+            if (itr != nodes.end())
+                nodes.erase(itr);
             nodes.insert(node);
         }
     };

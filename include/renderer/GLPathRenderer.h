@@ -3,6 +3,7 @@
 
 #include <limits>
 
+#include <array>
 #include <vector>
 #include <queue>
 #include <unordered_set>
@@ -69,7 +70,7 @@ namespace kouek
 				glDeleteVertexArrays(1, &VAO);
 				glDeleteBuffers(1, &EBO);
 			}
-			inline const auto getVertexIDs() const
+			inline const auto& getVertexIDs() const
 			{
 				return verts;
 			}
@@ -128,7 +129,6 @@ namespace kouek
 		struct Path
 		{
 			GLuint rootID;
-			GLuint VAO;
 			glm::vec3 color;
 			std::unordered_map<GLuint, SubPath> subPaths;
 			std::queue<GLuint> recycledSubpathIDs;
@@ -137,20 +137,15 @@ namespace kouek
 				GLuint rootID)
 				:color(color), rootID(rootID)
 			{
-				glGenVertexArrays(1, &VAO);
-				glBindVertexArray(VAO);
-				VERTEX_ARRAY_DEF;
-				glBindVertexArray(0);
 			}
 			~Path()
 			{
-				glDeleteVertexArrays(1, &VAO);
 			}
 			inline GLuint getRootID() const
 			{
 				return rootID;
 			}
-			inline const auto getSubPaths() const
+			inline const auto& getSubPaths() const
 			{
 				return subPaths;
 			}
@@ -167,13 +162,8 @@ namespace kouek
 					std::forward_as_tuple(startVertID));
 				return subPathID;
 			}
-			inline void drawRoot()
-			{
-				glBindVertexArray(VAO);
-				glDrawArrays(GL_POINTS, rootID, 1);
-			}
 		};
-		GLuint VBO = 0, slctVertVAO;
+		GLuint VBO = 0, VAO;
 		GLuint selectedPathID = std::numeric_limits<GLuint>::max();
 		GLuint selectedVertID = std::numeric_limits<GLuint>::max();
 		GLuint selectedSubPathID = std::numeric_limits<GLuint>::max();
@@ -186,8 +176,8 @@ namespace kouek
 	public:
 		GLPathRenderer()
 		{
-			glGenVertexArrays(1, &slctVertVAO);
-			glBindVertexArray(slctVertVAO);
+			glGenVertexArrays(1, &VAO);
+			glBindVertexArray(VAO);
 			glGenBuffers(1, &VBO);
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
 			glBufferStorage(GL_ARRAY_BUFFER, VERT_DAT_STRIDE * MAX_VERT_NUM,
@@ -209,12 +199,20 @@ namespace kouek
 		~GLPathRenderer()
 		{
 			glDeleteBuffers(1, &VBO);
-			glDeleteVertexArrays(1, &slctVertVAO);
+			glDeleteVertexArrays(1, &VAO);
 		}
 		GLPathRenderer(const GLPathRenderer&) = delete;
 		GLPathRenderer(GLPathRenderer&&) = delete;
 		GLPathRenderer& operator=(const GLPathRenderer&) = delete;
 		GLPathRenderer& operator=(GLPathRenderer&&) = delete;
+		void clear()
+		{
+			std::vector<GLuint> needDelPathIDs;
+			for (auto& [id, path] : paths)
+				needDelPathIDs.emplace_back(id);
+			for (GLuint id : needDelPathIDs)
+				deletePath(id);		
+		}
 		inline GLuint getSelectedPathID() const
 		{
 			return selectedPathID;
@@ -231,11 +229,11 @@ namespace kouek
 		{
 			return pathIDOfVerts[vertID];
 		}
-		inline const auto getPaths() const
+		inline const auto& getPaths() const
 		{
 			return paths;
 		}
-		inline const auto getVertexPositions() const
+		inline const auto& getVertexPositions() const
 		{
 			return verts;
 		}
@@ -271,18 +269,23 @@ namespace kouek
 
 			return pathID;
 		}
+		inline void deletePath(GLuint pathID)
+		{
+			std::unordered_set<GLuint> recycledVertIDs; // de-repeat
+			for (auto& [id, subPath] : paths.at(pathID).subPaths)
+				for (auto& vertID : subPath.verts)
+					recycledVertIDs.emplace(vertID);
+			for (GLuint vertID : recycledVertIDs)
+				availableVertIDs.emplace(vertID);
+			availablePathIDs.emplace(pathID);
+			paths.erase(pathID);
+		}
 		inline void startPath(GLuint pathID)
 		{
 			selectedPathID = pathID;
 		}
 		inline void endPath()
 		{
-			selectedPathID = selectedVertID = selectedSubPathID
-				= std::numeric_limits<GLuint>::max();
-		}
-		inline void deletePath()
-		{
-			paths.erase(selectedPathID);
 			selectedPathID = selectedVertID = selectedSubPathID
 				= std::numeric_limits<GLuint>::max();
 		}
@@ -338,7 +341,7 @@ namespace kouek
 		{
 			selectedVertID = vertID;
 		}
-		inline void endVertex(GLuint vertID)
+		inline void endVertex()
 		{
 			selectedVertID = std::numeric_limits<GLuint>::max();
 		}
@@ -350,7 +353,7 @@ namespace kouek
 			{
 				glPointSize(selectedVertSize);
 				glUniform3fv(colUniformPos, 1, (const float*)&selectedVertColor);
-				glBindVertexArray(slctVertVAO);
+				glBindVertexArray(VAO);
 				glDrawArrays(GL_POINTS, selectedVertID, 1);
 			}
 			for (auto& [id, path] : paths)
@@ -371,7 +374,8 @@ namespace kouek
 					subPath.drawEndVerts();
 				// draw root vert
 				glPointSize(rootVertSize);
-				path.drawRoot();
+				glBindVertexArray(VAO);
+				glDrawArrays(GL_POINTS, path.rootID, 1);
 			}
 			glLineWidth(1.f);
 			glPointSize(1.f);

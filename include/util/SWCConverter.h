@@ -17,8 +17,8 @@ namespace kouek
 
 	public:
 		inline static std::vector<glm::vec3> colorTabl = {
-			{1.f,1.f,1.f}, {1.f,.5f,.1f}, {1.f,1.f,.5f},
-			{1.f,0.f,.5f}, {1.f,.5f,0.f}
+			{1.f,.0f,.1f}, {1.f,1.f,.0f},
+			{0.f,1.f,.5f}, {0.f,.5f,1.f}
 		};
 
 		static void appendSWCToGLPathRenderer(const SWC& swc, GLPathRenderer& pathRenderer)
@@ -59,6 +59,7 @@ namespace kouek
 					// add a new path and new subPath
 					GLuint glID = pathRenderer.addPath(colorTabl[colTablIdx],
 						glm::vec3{ curr.x,curr.y,curr.z });
+					increaseColTablIdx();
 					pathRenderer.endPath();
 					pathRenderer.startPath(glID);
 
@@ -113,6 +114,7 @@ namespace kouek
 			std::unordered_map<GLuint, std::pair<SWCIDTy, SWCIDTy>> swcTreeLinks;
 
 			auto& vertPoss = pathRenderer.getVertexPositions();
+			SWCIDTy guid = 0;
 			for (const auto& [id, path] : pathRenderer.getPaths())
 			{
 				// build tree
@@ -127,7 +129,6 @@ namespace kouek
 				}
 				// BFS to gen SWCNode::id's
 				swcTreeLinks.clear();
-				SWCIDTy guid = 0;
 				{
 					GLuint rootID = path.getRootID();
 					swcTreeLinks[rootID].first = guid++;

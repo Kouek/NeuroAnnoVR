@@ -3,6 +3,8 @@ set(TARGET_NAME "testSWC")
 add_executable(
 	${TARGET_NAME}
 	"main.cpp"
+	"GLView.h" # Necessary! Or it won't be MOC
+	"${THIRDPARTY_DIR}/glad/src/glad.c"
 )
 target_include_directories(
 	${TARGET_NAME}
@@ -11,6 +13,6 @@ target_include_directories(
 )
 target_link_libraries(
 	${TARGET_NAME}
-	PRIVATE
+	${Qt5_LIBS}
 	"glm::glm"
 )
