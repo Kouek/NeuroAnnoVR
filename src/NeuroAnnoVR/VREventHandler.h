@@ -11,7 +11,7 @@ namespace kouek
         std::array<char, vr::k_unMaxTrackedDeviceCount> deviceClasses = { 0 };
         int validPoseCnt = 0;
         uint8_t needShowGizmoCnt;
-        bool isSubrgnMoveFine;
+        bool isLftTrigClicked, isRhtTrigClicked;
         vr::IVRSystem* HMD;
 
         vr::VRActionSetHandle_t actionsetFocus = vr::k_ulInvalidActionSetHandle;
@@ -23,7 +23,8 @@ namespace kouek
         vr::VRActionHandle_t actionLeftTrackpadWClick = vr::k_ulInvalidActionHandle;
         vr::VRActionHandle_t actionLeftTrackpadEClick = vr::k_ulInvalidActionHandle;
         vr::VRActionHandle_t actionLeftMenu = vr::k_ulInvalidActionHandle;
-        vr::VRActionHandle_t actionRightTriggerPress = vr::k_ulInvalidActionHandle;
+        vr::VRActionHandle_t actionRightTriggerClick = vr::k_ulInvalidActionHandle;
+        vr::VRActionHandle_t actionRightTriggerPull = vr::k_ulInvalidActionHandle;
         vr::VRActionHandle_t actionRightTrackpadSClick = vr::k_ulInvalidActionHandle;
         vr::VRActionHandle_t actionRightTrackpadNClick = vr::k_ulInvalidActionHandle;
         vr::VRActionHandle_t actionRightTrackpadWClick = vr::k_ulInvalidActionHandle;
@@ -43,12 +44,14 @@ namespace kouek
     private:
         void updateWhenDrawingUI();
         void updateWhenDrawingScene();
-        
+
+    public:
         void onHandPosecChanged();
         void onLeftHandTriggerPulled(
             const vr::InputAnalogActionData_t& actionDat);
         void onRightHandTriggerPressed(
-            const vr::InputDigitalActionData_t& actionDat);
+            const vr::InputAnalogActionData_t& actionDat);
+        void onSubregionChanged();
 	};
 }
 

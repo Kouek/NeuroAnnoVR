@@ -57,10 +57,10 @@ namespace kouek
 					// reach a root vert
 					// and it has no children visited,
 					// add a new path and new subPath
+					pathRenderer.endPath();
 					GLuint glID = pathRenderer.addPath(colorTabl[colTablIdx],
 						glm::vec3{ curr.x,curr.y,curr.z });
 					increaseColTablIdx();
-					pathRenderer.endPath();
 					pathRenderer.startPath(glID);
 
 					glID = pathRenderer.getPaths().at(glID).getRootID();
@@ -94,6 +94,11 @@ namespace kouek
 					do
 					{
 						auto& [id, childIdx] = stk.top();
+						if (childIdx == tree[id].size())
+						{
+							++childIdx;
+							break;
+						}
 						curr.id = tree[id][childIdx++];
 						curr = *nodes.find(curr);
 
@@ -115,6 +120,7 @@ namespace kouek
 
 			auto& vertPoss = pathRenderer.getVertexPositions();
 			SWCIDTy guid = 0;
+			swc.clear();
 			for (const auto& [id, path] : pathRenderer.getPaths())
 			{
 				// build tree

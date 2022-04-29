@@ -109,7 +109,7 @@ namespace kouek
 			pathRenderer->startSubPath(id);
 			id = pathRenderer->addVertex(glm::vec3{ .75f,.75f,-1.f });
 			pathRenderer->startVertex(id);
-			id = pathRenderer->addVertex(glm::vec3{ .75f,.75f,-1.f });
+			id = pathRenderer->addVertex(glm::vec3{ .825f,.75f,-1.f });
 			pathRenderer->endSubPath();
 			id = pathRenderer->addSubPath();
 			pathRenderer->startSubPath(id);
@@ -151,11 +151,7 @@ namespace kouek
 			pathRenderer->startSubPath(id);
 			id = pathRenderer->addVertex(glm::vec3{ -.75f,-.75f,-1.f });
 			pathRenderer->startVertex(id);
-			id = pathRenderer->addVertex(glm::vec3{ -.75f,-.75f,-1.f });
-			pathRenderer->endSubPath();
-			id = pathRenderer->addSubPath();
-			pathRenderer->startSubPath(id);
-			id = pathRenderer->addVertex(glm::vec3{ -.5f,-.75f,-1.f });
+			id = pathRenderer->addVertex(glm::vec3{ -.825f,-.75f,-1.f });
 			pathRenderer->endSubPath();
 			pathRenderer->endPath();
 		}
@@ -181,6 +177,8 @@ namespace kouek
 		{
 			switch (e->key())
 			{
+			case Qt::Key_U:
+				update(); break;
 			case Qt::Key_W:
 				swc = std::make_unique<FileSWC>("./SWC.txt");
 				SWCConverter::fromGLPathRendererToSWC(
@@ -191,6 +189,8 @@ namespace kouek
 				pathRenderer->clear();
 				break;
 			case Qt::Key_R:
+				makeCurrent(); // necessary
+
 				pathRenderer->clear();
 				swc = std::make_unique<FileSWC>("./SWC.txt");
 				SWCConverter::appendSWCToGLPathRenderer(

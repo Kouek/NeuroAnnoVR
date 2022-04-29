@@ -183,10 +183,16 @@ static void initVolumeRender(
 			+ "/cfg/VolumeCfg.json");
 		volumeRender.volume =
 			vs::CompVolume::Load(cfg.getResourcePath().c_str());
+		
 		const float scale = 5.f;
-		volumeRender.volume->SetSpaceX(cfg.getSpaceX() * scale);
-		volumeRender.volume->SetSpaceY(cfg.getSpaceY() * scale);
-		volumeRender.volume->SetSpaceZ(cfg.getSpaceZ() * scale);
+		glm::vec3 spaces;
+		volumeRender.volume->SetSpaceX(spaces.x = cfg.getSpaceX() * scale);
+		volumeRender.volume->SetSpaceY(spaces.y = cfg.getSpaceY() * scale);
+		volumeRender.volume->SetSpaceZ(spaces.z = cfg.getSpaceZ() * scale);
+		states->scaleVxToWd = glm::scale(glm::identity<glm::mat4>(), spaces);
+		states->scaleWdToVx = glm::scale(glm::identity<glm::mat4>(), glm::vec3{
+			1.f / spaces.x, 1.f / spaces.y, 1.f / spaces.z });
+
 		volumeRender.renderer->setStep(1024, cfg.getBaseSpace() * scale * .3f );
 		AppStates::subrgnMoveSensityFine = AppStates::moveSensity = std::max(
 			volumeRender.volume->GetVolumeSpaceX(),
@@ -348,6 +354,8 @@ kouek::MainApp::MainApp(int argc, char** argv)
 			Math::inversePose(TRInvT);
 
 		volumeRender.renderer->setSubregion(states->subrgn);
+		if (states->canVRRun)
+			vrEvntHndler->onSubregionChanged();
 	}
 
 	Math::printGLMMat4(states->eyeToHMD2[vr::Eye_Left], "HMDToEye L");
@@ -356,6 +364,8 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	Math::printGLMMat4(states->projection2[vr::Eye_Right], "Projection R");
 	printf("Render %d x %d pixels per Eye\n", states->HMDRenderSizePerEye[0],
 		states->HMDRenderSizePerEye[1]);
+	Math::printGLMMat4(states->fromVxToWdSp, "fromVxToWdSp");
+	Math::printGLMMat4(states->fromWdToVxSp, "fromWdToVxSp");
 }
 
 kouek::MainApp::~MainApp() {}
@@ -546,6 +556,7 @@ void kouek::MainApp::drawScene()
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		gizmoMVP2[eyeIdx] = VP2[eyeIdx] * states->gizmoTransform;
 		ball.MVP2[eyeIdx] = VP2[eyeIdx] * ball.transform;
+		pathMVP2[eyeIdx] = VP2[eyeIdx] * states->fromVxToWdSp;
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
 			handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
 				* states->hand2[hndIdx].transform;
@@ -619,7 +630,7 @@ void kouek::MainApp::drawScene()
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaders->pathSelectShader.program.bind();
 		glUniformMatrix4fv(
-			shaders->pathSelectShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[0]);
+			shaders->pathSelectShader.matPos, 1, GL_FALSE, (GLfloat*)&pathMVP2[0]);
 		pathRenderer->drawVertIDs();
 	}
 
@@ -677,7 +688,7 @@ void kouek::MainApp::drawScene()
 
 		shaders->pathColorShader.program.bind();
 		glUniformMatrix4fv(
-			shaders->pathColorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+			shaders->pathColorShader.matPos, 1, GL_FALSE, (GLfloat*)&pathMVP2[eyeIdx]);
 		pathRenderer->draw(shaders->pathColorShader.colorPos);
 		});
 
@@ -706,6 +717,7 @@ void kouek::MainApp::drawScene()
 	{
 		volumeRender.renderer->render(nullptr, states->renderTar);
 		intrctPoint.model->setPosData(glm::vec3(ball.projectedPos));
+		states->game.intrctPos = ball.transform[3];
 	}
 
 	glDisable(GL_DEPTH_TEST);

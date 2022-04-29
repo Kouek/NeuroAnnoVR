@@ -130,7 +130,8 @@ kouek::VREventHandler::VREventHandler(
     PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/left_north_click", &actionLeftTrackpadNClick));
     PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/left_west_click", &actionLeftTrackpadWClick));
     PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/left_east_click", &actionLeftTrackpadEClick));
-    PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/right_axis1_press", &actionRightTriggerPress));
+    PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/right_axis1_click", &actionRightTriggerClick));
+    PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/right_axis1_pull", &actionRightTriggerPull));
     PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/left_applicationmenu_press", &actionLeftMenu));
     PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/right_south_click", &actionRightTrackpadSClick));
     PROCESS_ERR(vr::VRInput()->GetActionHandle("/actions/focus/in/right_north_click", &actionRightTrackpadNClick));
@@ -203,10 +204,17 @@ void kouek::VREventHandler::updateWhenDrawingUI()
             states->showHandUI2[VRContext::Hand_Left]
             = states->showHandUI2[VRContext::Hand_Right] = false;
         // handle right trigger
-        vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+    }
+    // analog action
+    {
+        static bool lastPressed = false;
+        vr::InputAnalogActionData_t actionData;
+        // handle right trigger
+        vr::VRInput()->GetAnalogActionData(actionRightTriggerPull, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        bool pressed = actionData.x != 0;
         if (actionData.bActive)
-            if (actionData.bState)
-                if (actionData.bChanged)
+            if (pressed)
+                if (!lastPressed)
                 {
                     states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MousePressed);
                     states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
@@ -216,7 +224,7 @@ void kouek::VREventHandler::updateWhenDrawingUI()
                     states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MouseMoved);
                     states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
                 }
-            else if (actionData.bChanged)
+            else if (lastPressed)
             {
                 states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MouseReleased);
                 states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
@@ -226,6 +234,7 @@ void kouek::VREventHandler::updateWhenDrawingUI()
                 states->laserMouseMsgQue.modes.emplace(LaserMouseMode::MouseMoved);
                 states->laserMouseMsgQue.positions.emplace(states->laserMouseNormPos);
             }
+        lastPressed = pressed;
     }
 }
 
@@ -304,11 +313,12 @@ void kouek::VREventHandler::updateWhenDrawingScene()
         }
         // handle left trigger
         vr::VRInput()->GetDigitalActionData(actionLeftTriggerClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-        if (actionData.bActive && actionData.bState) isSubrgnMoveFine = true;
-        else isSubrgnMoveFine = false;
+        if (actionData.bActive && actionData.bState) isLftTrigClicked = true;
+        else isLftTrigClicked = false;
         // handle right trigger
-        vr::VRInput()->GetDigitalActionData(actionRightTriggerPress, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
-        onRightHandTriggerPressed(actionData);
+        vr::VRInput()->GetDigitalActionData(actionRightTriggerClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bState) isRhtTrigClicked = true;
+        else isRhtTrigClicked = false;
     }
     // analog action
     {
@@ -316,6 +326,8 @@ void kouek::VREventHandler::updateWhenDrawingScene()
         // handle left trigger
         vr::VRInput()->GetAnalogActionData(actionLeftTriggerPull, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
         onLeftHandTriggerPulled(actionData);
+        vr::VRInput()->GetAnalogActionData(actionRightTriggerPull, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        onRightHandTriggerPressed(actionData);
     }
 }
 
@@ -371,16 +383,18 @@ void kouek::VREventHandler::onLeftHandTriggerPulled(
     bool pressed = actionDat.x != 0;
     if (pressed && lastPressed)
     {
-        glm::vec4 dlt = states->hand2[VRContext::Hand_Left].transform[3];
-        dlt = dlt - lastPos;
-        dlt = states->camera.getViewMat(vr::Eye_Left) * dlt;
-        glm::vec3 drc = dlt;
-        drc = glm::normalize(dlt) * (isSubrgnMoveFine ?
-            AppStates::subrgnMoveSensityFine : AppStates::subrgnMoveSensity);
-        states->subrgn.center += drc;
-        lastPos = states->hand2[VRContext::Hand_Left].transform[3];
-
-        states->renderer->setSubregion(states->subrgn);
+        {
+            glm::vec4 dlt = states->hand2[VRContext::Hand_Left].transform[3];
+            dlt = dlt - lastPos;
+            dlt = states->camera.getViewMat(vr::Eye_Left) * dlt;
+            glm::vec3 drc = dlt;
+            drc = glm::normalize(dlt) * (isLftTrigClicked ?
+                AppStates::subrgnMoveSensityFine : AppStates::subrgnMoveSensity);
+            states->subrgn.center += drc;
+            lastPos = states->hand2[VRContext::Hand_Left].transform[3];
+            states->renderer->setSubregion(states->subrgn);
+        }
+        onSubregionChanged();
         ++needShowGizmoCnt;
     }
     lastPressed = pressed;
@@ -388,12 +402,13 @@ void kouek::VREventHandler::onLeftHandTriggerPulled(
 }
 
 void kouek::VREventHandler::onRightHandTriggerPressed(
-    const vr::InputDigitalActionData_t& actionDat)
+    const vr::InputAnalogActionData_t& actionDat)
 {
     states->game.shouldSelectVertex = false;
     if (!actionDat.bActive) return;
 
-    static bool pressed = false;
+    bool pressed = actionDat.x != 0;
+    static bool lastPressed = false;
     static bool needCheckDistWhenReleased;
     static glm::vec3 lastPos;
     auto isDistBigEnough = [&](const glm::vec3& pos) -> bool {
@@ -401,36 +416,50 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
         float distSqr = glm::dot(diff, diff);
         return distSqr >= AppStates::minDistSqrBtwnVerts;
     };
+    auto transformPos = [&](const glm::vec3& pos) -> glm::vec3 {
+        glm::vec4 pos4 = { pos, 1.f };
+        pos4 = states->fromWdToVxSp * pos4;
+        return glm::vec3{ pos4 };
+    };
 	switch (states->game.intrctActMode)
 	{
     case InteractionActionMode::SelectVertex:
-        if (actionDat.bState)
+        if (pressed && !lastPressed)
             states->game.shouldSelectVertex = true;
+        else if (auto vertID = states->pathRenderer->getSelectedVertID();
+            pressed && isRhtTrigClicked
+            && vertID != std::numeric_limits<GLuint>::max())
+            {
+                auto pos = transformPos(states->game.intrctPos);
+                states->pathRenderer->moveVertex(vertID, pos);
+            }
         break;
     case InteractionActionMode::AddPath:
-        if (actionDat.bChanged && !actionDat.bState)
+        if (!pressed && lastPressed)
         {
+            auto pos = transformPos(states->game.intrctPos);
             auto pathID = states->pathRenderer->addPath(
-                glm::vec3{ 1.f }, states->game.intrctPos);
+                glm::vec3{ 1.f }, pos);
             states->pathRenderer->endPath();
             states->pathRenderer->startPath(pathID);
             lastPos = states->game.intrctPos;
         }
         break;
 	case InteractionActionMode::AddVertex:
-        if (actionDat.bChanged && actionDat.bState)
+        if (pressed && !lastPressed)
         {
             auto id = states->pathRenderer->addSubPath();
             states->pathRenderer->startSubPath(id);
             pressed = true;
             needCheckDistWhenReleased = false;
         }
-        else if (actionDat.bChanged && !actionDat.bState)
+        else if (!pressed && lastPressed)
         {
             GLuint id = states->pathRenderer->getSelectedVertID();
             if (needCheckDistWhenReleased ? isDistBigEnough(states->game.intrctPos) : true)
             {
-                id = states->pathRenderer->addVertex(states->game.intrctPos);
+                auto pos = transformPos(states->game.intrctPos);
+                id = states->pathRenderer->addVertex(pos);
                 states->pathRenderer->endSubPath();
                 states->pathRenderer->startVertex(id);
                 lastPos = states->game.intrctPos;
@@ -439,9 +468,10 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
                 states->pathRenderer->endSubPath();
             pressed = false;
         }
-        else if (actionDat.bState && isDistBigEnough(states->game.intrctPos))
+        else if (pressed && isDistBigEnough(states->game.intrctPos))
         {
-            auto id = states->pathRenderer->addVertex(states->game.intrctPos);
+            auto pos = transformPos(states->game.intrctPos);
+            auto id = states->pathRenderer->addVertex(pos);
             states->pathRenderer->startVertex(id);
             lastPos = states->game.intrctPos;
             // once a vert is added via drag,
@@ -452,4 +482,29 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
 	default:
 		break;
 	}
+
+    lastPressed = pressed;
+}
+
+void kouek::VREventHandler::onSubregionChanged()
+{
+    glm::vec3 oriCntr = {
+        states->subrgn.halfW / states->scaleVxToWd[0][0],
+        states->subrgn.halfH / states->scaleVxToWd[1][1],
+        states->subrgn.halfD / states->scaleVxToWd[2][2] };
+    glm::vec3 cntr = {
+        states->subrgn.center.x / states->scaleVxToWd[0][0],
+        states->subrgn.center.y / states->scaleVxToWd[1][1],
+        states->subrgn.center.z / states->scaleVxToWd[2][2] };
+    states->fromVxToWdSp = glm::translate(glm::identity<glm::mat4>(),
+        oriCntr - cntr);
+    states->fromVxToWdSp = states->scaleVxToWd * states->fromVxToWdSp;
+
+    oriCntr = { states->subrgn.halfW,
+        states->subrgn.halfH, states->subrgn.halfD };
+    cntr = { states->subrgn.center.x,
+        states->subrgn.center.y, states->subrgn.center.z };
+    states->fromWdToVxSp = glm::translate(glm::identity<glm::mat4>(),
+        cntr - oriCntr);
+    states->fromWdToVxSp = states->scaleWdToVx * states->fromWdToVxSp;
 }

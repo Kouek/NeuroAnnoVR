@@ -21,7 +21,11 @@
       "type": "boolean"
     },
     {
-      "name": "/actions/focus/in/right_axis1_press",
+      "name": "/actions/focus/in/right_axis1_pull",
+      "type": "vector1"
+    },
+    {
+      "name": "/actions/focus/in/right_axis1_click",
       "type": "boolean"
     },
     {
@@ -83,7 +87,8 @@
       "/actions/focus/in/left_north_click": "Move Close",
       "/actions/focus/in/left_west_click": "Decrease Raycast Steps",
       "/actions/focus/in/left_east_click": "Increase Raycast Steps",
-      "/actions/focus/in/right_axis1_press": "Annotator Operate",
+      "/actions/focus/in/right_axis1_pull": "Annotator Operate2",
+      "/actions/focus/in/right_axis1_click": "Annotator Operate",
       "/actions/focus/in/right_south_click": "Cancel Annotator Operation",
       "/actions/focus/in/right_north_click": "TODO",
       "/actions/focus/in/right_west_click": "Previous Path",

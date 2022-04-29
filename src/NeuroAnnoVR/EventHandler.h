@@ -89,6 +89,9 @@ namespace kouek
 		std::array<glm::mat4, 2> projection2;
 		std::array<glm::mat4, 2> unProjection2;
 		std::array<glm::mat4, 2> eyeToHMD2;
+		
+		glm::mat4 scaleWdToVx, scaleVxToWd;
+		glm::mat4 fromWdToVxSp, fromVxToWdSp;
 
 		glm::vec2 laserMouseNormPos;
 		glm::vec3 cameraMountPos;

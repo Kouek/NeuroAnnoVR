@@ -61,14 +61,16 @@ namespace kouek
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
 				glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * vertGPUCap,
 					nullptr, GL_DYNAMIC_DRAW);
-				glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, 1, &startVertID);
+				glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(GLuint), &startVertID);
 				glBindVertexArray(0);
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 			}
 			~SubPath()
 			{
 				glDeleteVertexArrays(1, &VAO);
+				VAO = 0;
 				glDeleteBuffers(1, &EBO);
+				EBO = 0;
 			}
 			inline const auto& getVertexIDs() const
 			{
@@ -249,23 +251,20 @@ namespace kouek
 			pathIDOfVerts[rootID] = pathID;
 
 			verts[rootID] = rootPos;
-			glBindBuffer(GL_ARRAY_BUFFER, VBO);
-			GLintptr offs = VERT_DAT_STRIDE * rootID;
-			glBufferSubData(GL_ARRAY_BUFFER,
-				offs, VERT_DAT_POS_SIZE, &rootPos);
-			std::array<GLfloat, 4> id4{
+			std::array<GLfloat, 7> id4{
+				rootPos.x,  rootPos.y, rootPos.z,
 				(float)((rootID & 0x000000ff) >> 0) / 255.f,
 				(float)((rootID & 0x0000ff00) >> 8) / 255.f,
 				(float)((rootID & 0x00ff0000) >> 16) / 255.f,
 				(float)((rootID & 0xff000000) >> 24) / 255.f
 			};
+			glBindBuffer(GL_ARRAY_BUFFER, VBO);
 			glBufferSubData(GL_ARRAY_BUFFER,
-				offs + VERT_DAT_POS_SIZE,
-				VERT_DAT_ID_SIZE, id4.data());
+				VERT_DAT_STRIDE * rootID, VERT_DAT_STRIDE, id4.data());
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
 			paths.emplace(std::piecewise_construct,
 				std::forward_as_tuple(pathID),
 				std::forward_as_tuple(color, rootID));
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 			return pathID;
 		}
@@ -317,18 +316,15 @@ namespace kouek
 
 			verts[vertID] = pos;
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
-			GLintptr offs = VERT_DAT_STRIDE * vertID;
-			glBufferSubData(GL_ARRAY_BUFFER,
-				offs, VERT_DAT_POS_SIZE, &pos);
-			std::array<GLfloat, 4> id4{
+			std::array<GLfloat, 7> id4{
+				pos.x, pos.y, pos.z,
 				(float)((vertID & 0x000000ff) >> 0) / 255.f,
 				(float)((vertID & 0x0000ff00) >> 8) / 255.f,
 				(float)((vertID & 0x00ff0000) >> 16) / 255.f,
 				(float)((vertID & 0xff000000) >> 24) / 255.f
 			};
 			glBufferSubData(GL_ARRAY_BUFFER,
-				offs + VERT_DAT_POS_SIZE,
-				VERT_DAT_ID_SIZE, id4.data());
+				VERT_DAT_STRIDE * vertID, VERT_DAT_STRIDE, id4.data());
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 			auto& subPath = paths.at(selectedPathID)
@@ -336,6 +332,14 @@ namespace kouek
 			subPath.addVertex(vertID);
 
 			return vertID;
+		}
+		inline void moveVertex(GLuint vertID, glm::vec3& pos)
+		{
+			verts[vertID] = pos;
+			glBindBuffer(GL_ARRAY_BUFFER, VBO);
+			glBufferSubData(GL_ARRAY_BUFFER,
+				VERT_DAT_STRIDE * vertID, VERT_DAT_POS_SIZE, &pos);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
 		}
 		inline void startVertex(GLuint vertID)
 		{

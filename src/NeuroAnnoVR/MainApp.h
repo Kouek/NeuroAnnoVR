@@ -38,10 +38,11 @@ namespace kouek
 		std::unique_ptr<GLPathRenderer> pathRenderer;
 		std::unique_ptr<Shaders> shaders;
 
-		std::array<glm::mat4, 2> handUIMVP2;
 		std::array<glm::mat4, 2> VP2;
+		std::array<glm::mat4, 2> handUIMVP2;
 		std::array<glm::mat4, 2> gizmoMVP2;
 		std::array<std::array<glm::mat4, 2>, 2> handMVP22;
+		std::array<glm::mat4, 2> pathMVP2;
 
 		struct
 		{

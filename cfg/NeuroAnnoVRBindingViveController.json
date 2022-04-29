@@ -141,11 +141,11 @@
         },
         {
           "inputs": {
-            "pull": {
-              "output": "/actions/focus/in/right_axis1_value"
+            "click": {
+              "output": "/actions/focus/in/right_axis1_click"
             },
-            "touch": {
-              "output": "/actions/focus/in/right_axis1_touch"
+            "pull": {
+              "output": "/actions/focus/in/right_axis1_pull"
             }
           },
           "mode": "trigger",
