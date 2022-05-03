@@ -260,6 +260,7 @@ __global__ void createSubsampleTexKernel(glm::vec4* d_sbsmpl)
 		y = (float)texY - centerY;
 		sbsmplX = x / scale + hfWindowWid;
 		sbsmplY = y / scale + hfWindowWid;
+
 		// id: <y_double, x_double, y_sign, x_sign, y, x>
 		// 111011 101011 101010 101111 111111
 		// 011011 001011 001010 001111 011111
@@ -636,6 +637,17 @@ __global__ void renderKernel(
 		dc_renderParam.lightParam.bkgrndColor.b,
 		dc_renderParam.lightParam.bkgrndColor.a);
 
+#ifdef TEST_DEPTH_TEX
+	uchar4 depth4 = tex2D<uchar4>(
+		blockIdx.z == 0 ? d_depthTexL : d_depthTexR,
+		windowX, windowY);
+	float depInZeroOne = depth4.x / 255.f;
+	d_color = rgbaFloatToUbyte4(
+		depInZeroOne, depInZeroOne, depInZeroOne, 1.f);
+	return;
+#endif // TEST_DEPTH_TEX
+
+
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = dc_renderParam.camPos2[blockIdx.z];
 	const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
@@ -819,6 +831,16 @@ __global__ void subsampleKernel(
 	if (sbsmplTexVal.x >= dc_renderParam.windowSize.x
 		|| sbsmplTexVal.y >= dc_renderParam.windowSize.y) return;
 
+#ifdef TEST_DEPTH_TEX
+	uchar4 depth4 = tex2D<uchar4>(
+		blockIdx.z == 0 ? d_depthTexL : d_depthTexR,
+		sbsmplTexVal.x, sbsmplTexVal.y);
+	float depInZeroOne = depth4.x / 255.f;
+	d_color = rgbaFloatToUbyte4(
+		depInZeroOne, depInZeroOne, depInZeroOne, 1.f);
+	return;
+#endif // TEST_DEPTH_TEX
+
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = dc_renderParam.camPos2[blockIdx.z];
 	const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
@@ -968,7 +990,7 @@ __global__ void testReconstructionTexKernel(
 		reconsTexVal.z, 1.f);
 }
 
-__global__ void testReconstructionKernel(
+__global__ void testReconstructionXDiffKernel(
 	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
 {
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
@@ -990,10 +1012,36 @@ __global__ void testReconstructionKernel(
 		d_color = rgbaFloatToUbyte4(0, 0, 0, 1.f);
 	else
 		d_color = rgbaFloatToUbyte4(1.f, .5f, 0, 1.f);*/
-	glm::vec2 diff = { sbsmplTexVal.x - (float)windowX,
-		sbsmplTexVal.y - (float)windowY};
-	diff = glm::abs(diff);
-	d_color = rgbaFloatToUbyte4(diff.r, diff.g, 0, 1.f);
+	float diff = sbsmplTexVal.x - (float)windowX;
+	d_color = rgbaFloatToUbyte4(diff < 0 ? 0 : 1.f,
+		fabsf(diff) > 0 ? 1.f : 0, 0, 1.f);
+}
+
+__global__ void testReconstructionYDiffKernel(
+	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR)
+{
+	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
+	uint32_t windowY = blockIdx.y * blockDim.y + threadIdx.y;
+	if (windowX >= dc_renderParam.windowSize.x || windowY >= dc_renderParam.windowSize.y) return;
+	size_t windowFlatIdx = (size_t)windowY * dc_renderParam.windowSize.x + windowX;
+
+	glm::u8vec4& d_color = blockIdx.z == 0 ?
+		d_colorL[windowFlatIdx] : d_colorR[windowFlatIdx];
+	float4 reconsTexVal = tex2D<float4>(
+		dc_reconsTexes[dc_renderParam.sbsmplLvl - 1],
+		(float)windowX, (float)windowY);
+	float4 sbsmplTexVal = tex2D<float4>(
+		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
+		reconsTexVal.x, reconsTexVal.y);
+	/*if (sbsmplTexVal.w == 1.f)
+		d_color = rgbaFloatToUbyte4(1.f, 1.f, 1.f, 1.f);
+	else if (sbsmplTexVal.w == 0)
+		d_color = rgbaFloatToUbyte4(0, 0, 0, 1.f);
+	else
+		d_color = rgbaFloatToUbyte4(1.f, .5f, 0, 1.f);*/
+	float diff = sbsmplTexVal.y - (float)windowY;
+	d_color = rgbaFloatToUbyte4(diff < 0 ? 0 : 1.f,
+		0, fabsf(diff) > 0 ? 1.f : 0, 1.f);
 }
 
 __global__ void reconstructionKernel(
@@ -1025,7 +1073,6 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 	if (stream == nullptr)
 		CUDA_RUNTIME_CHECK(cudaStreamCreate(&stream));
 
-#ifndef NO_FAVR
 	assert(sbsmplLvl > 0 && sbsmplLvl <= MAX_SUBSAMPLE_LEVEL_NUM);
 	if (d_sbsmplTexArrs[sbsmplLvl - 1] == nullptr)
 		createSubsampleAndReconstructionTexes(
@@ -1035,10 +1082,8 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 		createSubsampleColorTex(sbsmplTexW, sbsmplTexH);
 		sbsmplLvlChanged = false;
 	}
-#endif // !NO_FAVR
 
 	// from here, called per frame, thus no CUDA_RUNTIME_API_CHECK
-
 	dim3 threadPerBlock = { 16, 16 };
 	dim3 blockPerGrid;
 
@@ -1086,12 +1131,6 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 			&depthTexDesc.texDesc, nullptr);
 	}
 
-#ifdef NO_FAVR
-	blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
-						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
-	renderKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
-		d_color2[0], d_color2[1], d_depthTex2[0], d_depthTex2[1]);
-#else
 	switch (renderTar)
 	{
 	case CompVolumeFAVRRenderer::RenderTarget::SubsampleTex:
@@ -1099,6 +1138,7 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 		testSubsampleTexKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
 			d_color2[0], d_color2[1]);
+
 		break;
 	case CompVolumeFAVRRenderer::RenderTarget::SubsampleResult:
 		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
@@ -1115,18 +1155,28 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 		testSubsampleKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
 			d_color2[0], d_color2[1]);
+
 		break;
 	case CompVolumeFAVRRenderer::RenderTarget::ReconstructionTex:
 		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
 							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 		testReconstructionTexKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
 			d_color2[0], d_color2[1]);
+
 		break;
-	case CompVolumeFAVRRenderer::RenderTarget::ReconstructionResult:
+	case CompVolumeFAVRRenderer::RenderTarget::ReconstructionXDiff:
 		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
 							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
-		testReconstructionKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+		testReconstructionXDiffKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
 			d_color2[0], d_color2[1]);
+
+		break;
+	case CompVolumeFAVRRenderer::RenderTarget::ReconstructionYDiff:
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		testReconstructionYDiffKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1]);
+
 		break;
 	case CompVolumeFAVRRenderer::RenderTarget::Image:
 		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
@@ -1143,11 +1193,18 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 							 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 		reconstructionKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
 			d_color2[0], d_color2[1]);
+
+		break;
+	case CompVolumeFAVRRenderer::RenderTarget::FullResolutionImage:
+		blockPerGrid = { (windowW + threadPerBlock.x - 1) / threadPerBlock.x,
+						 (windowH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
+		renderKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
+			d_color2[0], d_color2[1], d_depthTex2[0], d_depthTex2[1]);
+
 		break;
 	default:
 		assert(false);
 	}
-#endif // NO_FAVR
 
 	for (uint8_t idx = 0; idx < 2; ++idx)
 	{

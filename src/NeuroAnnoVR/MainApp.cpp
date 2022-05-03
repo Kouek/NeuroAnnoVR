@@ -230,6 +230,7 @@ static void initVolumeRender(
 	volumeRender.tex2[1] = createPlainTexture(states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
 }
 
+static QOpenGLContext* uniCtx = nullptr;
 kouek::MainApp::MainApp(int argc, char** argv)
 {
 	// init Qt and GL Context (by EditorWindow.QOpenGLWidget) ====>
@@ -237,6 +238,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	editorWindow = std::make_unique<EditorWindow>();
 	editorWindow->showMaximized();
 	editorWindow->getVRView()->makeCurrent(); // set it as default GL Context
+	uniCtx = QOpenGLContext::currentContext();
 
 	// init States and Event Handler (both VR and Qt) ====>
 	states = std::make_shared<AppStates>();
@@ -332,7 +334,11 @@ kouek::MainApp::MainApp(int argc, char** argv)
 
 	{
 		states->cameraMountPos = glm::vec3(0, -.6f, 0);
-		states->camera.setHeadPos(states->cameraMountPos);
+
+		states->camera.setHeadPos(glm::vec3(
+			states->subrgn.halfW * 2.f,
+			states->subrgn.halfH * 2.f,
+			states->subrgn.halfD * 2.f));
 
 		states->gizmoTransform = glm::scale(glm::identity<glm::mat4>(),
 			glm::vec3(states->subrgn.halfW * 2,
@@ -576,7 +582,11 @@ void kouek::MainApp::drawScene()
 		{
 			glUniformMatrix4fv(
 				shaders->depthShader.matPos, 1, GL_FALSE, (GLfloat*)&gizmoMVP2[eyeIdx]);
+			// using FAVR, the depth buffer might be sampled by coord with error,
+			// draw lines thicker to avoid losing depth info
+			glLineWidth(5.f);
 			gizmo.model->draw();
+			glLineWidth(1.f);
 		}
 
 		if (states->hand2[VRContext::Hand_Right].show)
@@ -722,7 +732,7 @@ void kouek::MainApp::drawScene()
 
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_DST_ALPHA);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	shaders->diffuseShader.program.bind();
 	glUniformMatrix4fv(
 		shaders->diffuseShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);

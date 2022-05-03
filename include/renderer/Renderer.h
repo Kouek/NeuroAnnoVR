@@ -87,7 +87,9 @@ namespace kouek
 			SubsampleTex,
 			SubsampleResult,
 			ReconstructionTex,
-			ReconstructionResult,
+			ReconstructionXDiff,
+			ReconstructionYDiff,
+			FullResolutionImage,
 			Last
 		};
 		struct CameraParameter
