@@ -72,6 +72,8 @@ namespace kouek
 
 	struct AppStates
 	{
+		static inline constexpr glm::vec3 CAM_MOUNTED_POS_IN_WANDER = { 0, -.6f, 0 };
+
 		static inline float moveSensity = .1f;
 		static inline float subrgnMoveSensity = .002f;
 		static inline float subrgnMoveSensityFine = .001f;
@@ -93,6 +95,7 @@ namespace kouek
 		glm::mat4 scaleWdToVx, scaleVxToWd;
 		glm::mat4 fromWdToVxSp, fromVxToWdSp;
 
+		float meshAlpha = .5f;
 		glm::vec2 laserMouseNormPos;
 		glm::vec3 cameraMountPos;
 		glm::mat4 handUITransform;

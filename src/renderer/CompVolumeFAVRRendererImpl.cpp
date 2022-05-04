@@ -163,7 +163,7 @@ void kouek::CompVolumeFAVRRendererImpl::render(
 		mappingTable.data(), sizeof(uint32_t) * mappingTable.size());
 
 	FAVRFunc->render(
-		intrctPos,
+		intrctPos, FAVRRenderParam->intrctParam,
 		renderParam->windowSize.x, renderParam->windowSize.y,
 		FAVRRenderParam->sbsmplSize.x, FAVRRenderParam->sbsmplSize.y,
 		FAVRRenderParam->sbsmplLvl, renderTar);

@@ -102,7 +102,7 @@ namespace kouek
 		enum class InteractionMode : uint8_t
 		{
 			AnnotationBall = 0,
-			AnnotationRay
+			AnnotationLaser
 		};
 		virtual void setCamera(const CameraParameter& camParam) = 0;
 		struct InteractionParameter
@@ -115,6 +115,11 @@ namespace kouek
 					glm::vec3 AABBSize;
 					glm::vec3 startPos;
 				}ball;
+				struct
+				{
+					glm::vec3 ori;
+					glm::vec3 drc;
+				}laser;
 			}dat;
 		};
 		virtual void setInteractionParam(const InteractionParameter& intrctParam) = 0;

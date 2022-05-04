@@ -14,15 +14,32 @@
    <string>RightHandUI</string>
   </property>
   <property name="styleSheet">
-   <string notr="true">#RightHnadUI {
-	background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.994, y2:1, stop:0 rgba(0, 255, 255, 255), stop:0.289773 rgba(170, 170, 255, 255), stop:1 rgba(255, 255, 255, 255));
+   <string notr="true">#RightHandUI {
+background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:0.994, y2:1, stop:0 rgba(0, 143, 143, 255), stop:0.289773 rgba(170, 170, 255, 255), stop:1 rgba(90, 90, 90, 255));
 }</string>
   </property>
   <layout class="QGridLayout" name="gridLayout">
    <item row="0" column="0">
-    <widget class="QGroupBox" name="groupBoxInteractionActions">
+    <widget class="QGroupBox" name="groupBoxInteractionActionModes">
+     <property name="styleSheet">
+      <string notr="true">QGroupBox  {
+    border: 1px solid gray;
+    border-color: #FF17365D;
+    margin-top: 27px;
+    font-size: 14px;
+    border-radius: 15px;
+}
+
+QGroupBox::title  {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 5px 8000px 5px 8000px;
+    background-color: #FF17365D;
+    color: rgb(255, 255, 255);
+}</string>
+     </property>
      <property name="title">
-      <string>Interaction Actions</string>
+      <string>Interaction Action Modes</string>
      </property>
      <layout class="QGridLayout" name="gridLayout_2">
       <item row="0" column="5">
@@ -32,6 +49,17 @@
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
         </property>
         <property name="text">
          <string>Add Vertex</string>
@@ -48,6 +76,17 @@
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
         </property>
         <property name="text">
          <string>Select Vertex</string>
@@ -71,11 +110,25 @@
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
+        </property>
         <property name="text">
          <string>Add Path</string>
         </property>
         <property name="checkable">
          <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
         </property>
        </widget>
       </item>
@@ -86,6 +139,17 @@
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
         </property>
         <property name="text">
          <string>Delete Vertex</string>
@@ -103,6 +167,17 @@
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
+        </property>
         <property name="text">
          <string>Spilit</string>
         </property>
@@ -119,8 +194,102 @@
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
+        </property>
         <property name="text">
          <string>Join</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <widget class="QGroupBox" name="groupBoxInteractionModes">
+     <property name="styleSheet">
+      <string notr="true">QGroupBox  {
+    border: 1px solid gray;
+    border-color: #FF17365D;
+    margin-top: 27px;
+    font-size: 14px;
+    border-radius: 15px;
+}
+
+QGroupBox::title  {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 5px 8000px 5px 8000px;
+    background-color: #FF17365D;
+    color: rgb(255, 255, 255);
+}</string>
+     </property>
+     <property name="title">
+      <string>Interaction Modes</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QPushButton" name="pushButtonAnnoBall">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
+        </property>
+        <property name="text">
+         <string>Anno Ball</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pushButtonAnnoLaser">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
+        </property>
+        <property name="text">
+         <string>Anno Laser</string>
         </property>
         <property name="checkable">
          <bool>true</bool>

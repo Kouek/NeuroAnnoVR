@@ -46,9 +46,9 @@ namespace kouek
 
 		struct
 		{
-			std::unique_ptr<WireFrame> model;
 			glm::vec3 intersectPos;
 			glm::vec4 projectedPos;
+			std::unique_ptr<WireFrame> model;
 		}laser;
 
 		struct

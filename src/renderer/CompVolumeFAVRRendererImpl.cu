@@ -58,6 +58,7 @@ struct PosWithScalar
 PosWithScalar* d_intrctPossInXY = nullptr;
 PosWithScalar* d_intrctPossInX = nullptr;
 PosWithScalar* intrctPossInX = nullptr;
+glm::vec3* d_intrctPos = nullptr;
 
 cudaStream_t stream = nullptr;
 
@@ -650,11 +651,11 @@ __global__ void renderKernel(
 
 	glm::vec3 rayDrc;
 	const glm::vec3& camPos = dc_renderParam.camPos2[blockIdx.z];
-	const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
 		//   unproject
+		const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
 		glm::vec4 v41 = unProjection * glm::vec4{
 			(((float)windowX / dc_renderParam.windowSize.x) - .5f) * 2.f,
 			(((float)windowY / dc_renderParam.windowSize.y) - .5f) * 2.f,
@@ -800,7 +801,7 @@ __global__ void testSubsampleTexKernel(
 }
 
 __global__ void subsampleKernel(
-	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR,
+	glm::u8vec4* d_colorL, glm::u8vec4* d_colorR, glm::vec3* d_intrctPos,
 	cudaTextureObject_t d_depthTexL, cudaTextureObject_t d_depthTexR)
 {
 	uint32_t windowX = blockIdx.x * blockDim.x + threadIdx.x;
@@ -818,17 +819,22 @@ __global__ void subsampleKernel(
 		dc_renderParam.lightParam.bkgrndColor.b,
 		dc_renderParam.lightParam.bkgrndColor.a);
 
+	// use (0,0) to find the interaction position when using AnnotationLaser
+	bool isThreadForFindIntrctPos = dc_renderParam.intrctParam.mode ==
+		kouek::CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser
+		&& windowX == 0 && windowY == 0;	
+
 	// sample the original Window Pos
 	float4 sbsmplTexVal = tex2D<float4>(
 		dc_sbsmplTexes[dc_renderParam.sbsmplLvl - 1],
 		(float)windowX, (float)windowY);
-	if (sbsmplTexVal.w == 0)
+	if (isThreadForFindIntrctPos); // no filtering here
+	else if (sbsmplTexVal.w == 0)
 	{
 		d_color = rgbaFloatToUbyte4(0, 0, 1.f, 1.f);
 		return;
 	}
-
-	if (sbsmplTexVal.x >= dc_renderParam.windowSize.x
+	else if (sbsmplTexVal.x >= dc_renderParam.windowSize.x
 		|| sbsmplTexVal.y >= dc_renderParam.windowSize.y) return;
 
 #ifdef TEST_DEPTH_TEX
@@ -842,13 +848,16 @@ __global__ void subsampleKernel(
 #endif // TEST_DEPTH_TEX
 
 	glm::vec3 rayDrc;
-	const glm::vec3& camPos = dc_renderParam.camPos2[blockIdx.z];
-	const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
+	const glm::vec3& camPos = isThreadForFindIntrctPos ?
+		dc_renderParam.intrctParam.dat.laser.ori : dc_renderParam.camPos2[blockIdx.z];
 	float tEnter, tExit;
 	{
 		// find Ray of each Pixel on Window
 		//   unproject
-		glm::vec4 v41 = unProjection * glm::vec4{
+		const glm::mat4& unProjection = dc_renderParam.unProjection2[blockIdx.z];
+		glm::vec4 v41 = isThreadForFindIntrctPos ?
+			glm::vec4{ dc_renderParam.intrctParam.dat.laser.drc, 1.f } :
+			unProjection * glm::vec4{
 			((sbsmplTexVal.x / dc_renderParam.windowSize.x) - .5f) * 2.f,
 			((sbsmplTexVal.y / dc_renderParam.windowSize.y) - .5f) * 2.f,
 			1.f, 1.f };
@@ -860,6 +869,7 @@ __global__ void subsampleKernel(
 		float tFarClip = dc_renderParam.farClip;
 		//   then compute upper bound of steps
 		//   for Mesh-Volume mixed rendering
+		if (!isThreadForFindIntrctPos)
 		{
 			uchar4 depth4 = tex2D<uchar4>(
 				blockIdx.z == 0 ? d_depthTexL : d_depthTexR,
@@ -872,8 +882,11 @@ __global__ void subsampleKernel(
 		tFarClip /= absRayDrcZ;
 		//   rotate
 		v41.x = rayDrc.x, v41.y = rayDrc.y, v41.z = rayDrc.z; // normalized in vec3
-		v41 = dc_renderParam.camRotaion * v41;
-		rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
+		if (!isThreadForFindIntrctPos)
+		{
+			v41 = dc_renderParam.camRotaion * v41;
+			rayDrc.x = v41.x, rayDrc.y = v41.y, rayDrc.z = v41.z;
+		}
 
 		// Ray intersect Subregion(OBB)
 		// equivalent to Ray intersect AABB in Subreion Space
@@ -896,12 +909,14 @@ __global__ void subsampleKernel(
 		// Near&Far-clip
 		if (tEnter < tNearClip) tEnter = tNearClip;
 		if (tExit > tFarClip) tExit = tFarClip;
+
+		// no intersection
+		if (tEnter >= tExit)
+			return;
 	}
 
-	// no intersection
-	if (tEnter >= tExit)
-		return;
 	glm::vec3 rayPos = camPos + tEnter * rayDrc;
+	if (isThreadForFindIntrctPos) *d_intrctPos = rayPos;
 
 	glm::vec3 subrgnCenterInWdSp = {
 		.5f * dc_renderParam.subrgn.halfW,
@@ -911,7 +926,7 @@ __global__ void subsampleKernel(
 	glm::vec3 rayDrcMulStp = rayDrc * dc_renderParam.step;
 	glm::vec3 samplePos;
 	glm::vec4 color = glm::zero<glm::vec4>();
-	float sampleVal = 0;
+	float sampleVal = 0, maxScalar = 0;
 	uint32_t stepNum = 0;
 	for (;
 		stepNum <= dc_renderParam.maxStepNum && tEnter <= tExit;
@@ -926,6 +941,11 @@ __global__ void subsampleKernel(
 		float currSampleVal = virtualSampleLOD0(samplePos);
 		if (currSampleVal <= 0)
 			continue;
+		if (isThreadForFindIntrctPos && currSampleVal > maxScalar)
+		{
+			maxScalar = currSampleVal;
+			*d_intrctPos = rayPos;
+		}
 
 		float4 currColor = tex2D<float4>(dc_preIntTransferFunc, sampleVal, currSampleVal);
 		if (currColor.w <= 0)
@@ -1065,7 +1085,7 @@ __global__ void reconstructionKernel(
 
 //#define NO_FAVR
 void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
-	glm::vec3* intrctPos,
+	glm::vec3* intrctPos, const CompVolumeFAVRRenderer::InteractionParameter& intrctParam,
 	uint32_t windowW, uint32_t windowH,
 	uint32_t sbsmplTexW, uint32_t sbsmplTexH,
 	uint8_t sbsmplLvl, CompVolumeFAVRRenderer::RenderTarget renderTar)
@@ -1087,7 +1107,7 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 	dim3 threadPerBlock = { 16, 16 };
 	dim3 blockPerGrid;
 
-	if (intrctPos != nullptr)
+	if (intrctParam.mode == CompVolumeFAVRRenderer::InteractionMode::AnnotationBall)
 	{
 		if (d_intrctPossInXY == nullptr)
 		{
@@ -1110,14 +1130,19 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 		cudaMemcpy(intrctPossInX, d_intrctPossInX,
 			sizeof(PosWithScalar) * INTERACTION_SAMPLE_DIM, cudaMemcpyDeviceToHost);
 		float maxScalar = 0;
-		for (uint32_t x = 0; x < INTERACTION_SAMPLE_DIM; ++x)
-			if (intrctPossInX[x].scalar > maxScalar
-				&& intrctPossInX[x].scalar > INTERACTION_SAMPLE_SCALAR_LOWER_THRESHOLD)
-			{
-				maxScalar = intrctPossInX[x].scalar;
-				*intrctPos = intrctPossInX[x].pos;
-			}
+		if (intrctPos != nullptr)
+			for (uint32_t x = 0; x < INTERACTION_SAMPLE_DIM; ++x)
+				if (intrctPossInX[x].scalar > maxScalar
+					&& intrctPossInX[x].scalar > INTERACTION_SAMPLE_SCALAR_LOWER_THRESHOLD)
+				{
+					maxScalar = intrctPossInX[x].scalar;
+					*intrctPos = intrctPossInX[x].pos;
+				}
 	}
+	else if (intrctParam.mode == CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser)
+		if (d_intrctPos == nullptr)
+			CUDA_RUNTIME_API_CALL(
+				cudaMalloc(&d_intrctPos, sizeof(glm::vec3)));
 
 	for (uint8_t idx = 0; idx < 2; ++idx)
 	{
@@ -1144,7 +1169,7 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
 						 (sbsmplTexH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 		subsampleKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
-			d_sbsmplColor2[0], d_sbsmplColor2[1],
+			d_sbsmplColor2[0], d_sbsmplColor2[1], intrctPos,
 			d_depthTex2[0], d_depthTex2[1]);
 		cudaMemcpyToArray(d_sbsmplColorTexArr2[0], 0, 0, d_sbsmplColor2[0],
 			d_sbsmplColorSize, cudaMemcpyDeviceToDevice);
@@ -1182,8 +1207,11 @@ void kouek::CompVolumeRendererCUDA::FAVRFunc::render(
 		blockPerGrid = { (sbsmplTexW + threadPerBlock.x - 1) / threadPerBlock.x,
 						 (sbsmplTexH + threadPerBlock.y - 1) / threadPerBlock.y, 2 };
 		subsampleKernel << < blockPerGrid, threadPerBlock, 0, stream >> > (
-			d_sbsmplColor2[0], d_sbsmplColor2[1],
+			d_sbsmplColor2[0], d_sbsmplColor2[1], d_intrctPos,
 			d_depthTex2[0], d_depthTex2[1]);
+		if (intrctPos != nullptr
+			&& intrctParam.mode == CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser)
+			cudaMemcpy(intrctPos, d_intrctPos, sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 		cudaMemcpyToArray(d_sbsmplColorTexArr2[0], 0, 0, d_sbsmplColor2[0],
 			d_sbsmplColorSize, cudaMemcpyDeviceToDevice);
 		cudaMemcpyToArray(d_sbsmplColorTexArr2[1], 0, 0, d_sbsmplColor2[1],

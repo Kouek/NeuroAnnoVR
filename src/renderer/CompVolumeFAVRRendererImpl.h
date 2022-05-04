@@ -40,7 +40,7 @@ namespace kouek
 				uint32_t w, uint32_t h);
 			void unregisterGLResource();
 			void render(
-				glm::vec3* intrctPos,
+				glm::vec3* intrctPos, const CompVolumeFAVRRenderer::InteractionParameter& intrctParam,
 				uint32_t windowW, uint32_t windowH,
 				uint32_t sbsmplTexW, uint32_t sbsmplTexH,
 				uint8_t sbsmplLvl, CompVolumeFAVRRenderer::RenderTarget renderTar);

@@ -2,6 +2,7 @@
 #define KOUEK_LEFT_HAND_UI_H
 
 #include <QtWidgets/qwidget.h>
+#include <QtWidgets/qbuttongroup.h>
 
 namespace Ui
 {
@@ -17,9 +18,15 @@ namespace kouek
 	private:
 		Ui::LeftHandUI* ui;
 
+		QButtonGroup* moveModes;
+
 	public:
 		explicit LeftHandUI(QWidget* parent = Q_NULLPTR);
 		~LeftHandUI();
+
+	signals:
+		void moveModeBtnsClicked(int id);
+		void meshAlphaSliderChanged(float alpha);
 	};
 }
 

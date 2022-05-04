@@ -139,8 +139,8 @@ static std::unique_ptr<WireFrame> createGizmo()
 static std::unique_ptr<WireFrame> createLaser()
 {
 	std::vector<GLfloat> verts = {
-		+0.f,+0.f,+0.0f, 1.f,.5f,.5f,
-		+0.f,+0.f,-30.f, 1.f,.5f,.5f
+		+0.f,+0.f,+0.0f, 1.f,1.f,1.f,
+		+0.f,+0.f,-30.f, 1.f,1.f,1.f
 	};
 	return std::make_unique<WireFrame>(verts);
 }
@@ -333,7 +333,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 		submitFramebuffer2[vr::Eye_Right].FBO, states->HMDRenderSizePerEye);
 
 	{
-		states->cameraMountPos = glm::vec3(0, -.6f, 0);
+		states->cameraMountPos = AppStates::CAM_MOUNTED_POS_IN_WANDER;
 
 		states->camera.setHeadPos(glm::vec3(
 			states->subrgn.halfW * 2.f,
@@ -479,9 +479,7 @@ void kouek::MainApp::drawUI()
 				glUniformMatrix4fv(
 					shaders->colorShader.matPos, 1, GL_FALSE,
 					(GLfloat*)&identity);
-				glPointSize(GLPathRenderer::selectedVertSize);
 				intrctPoint.model->draw();
-				glPointSize(1.f);
 			}
 		}
 
@@ -526,37 +524,47 @@ void kouek::MainApp::drawScene()
 		auto& handZ = states->hand2[VRContext::Hand_Right].transform[2];
 		auto& handPos = states->hand2[VRContext::Hand_Right].transform[3];
 		glm::vec3 ballPos = handPos - ANNO_BALL_DIST_FROM_HAND * handZ;
-		states->game.intrctParam.dat.ball.startPos.x = ballPos.x - ANNO_BALL_RADIUS;
-		states->game.intrctParam.dat.ball.startPos.y = ballPos.y - ANNO_BALL_RADIUS;
-		states->game.intrctParam.dat.ball.startPos.z = ballPos.z - ANNO_BALL_RADIUS;
-		ball.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
-		ball.transform = glm::scale(ball.transform, glm::vec3{ ANNO_BALL_DIAMETER });
-
-		ball.projectedPos = VP2[vr::Eye_Left] * glm::vec4{ ballPos,1.f };
-		ball.projectedPos /= ball.projectedPos.w;
-
-		ball.screenPos.x = .5f * (ball.projectedPos.x + 1.f);
-		ball.screenPos.y = .5f * (ball.projectedPos.y + 1.f);
-		if (states->game.shouldSelectVertex
-			&& ball.screenPos.x >= 0 && ball.screenPos.x < 1.f
-			&& ball.screenPos.y >= 0 && ball.screenPos.y < 1.f)
+		if (states->game.intrctParam.mode ==
+			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall)
 		{
-			std::array<GLubyte, 4> id4;
-			glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
-			glPixelStorei(GL_PACK_ALIGNMENT, 1);
-			glReadPixels(
-				(GLint)floor(states->HMDRenderSizePerEye[0] * ball.screenPos.x),
-				(GLint)floor(states->HMDRenderSizePerEye[1] * ball.screenPos.y),
-				1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id4.data());
-			GLuint vertID = (GLuint)id4[0]
-				| ((GLuint)id4[1] << 8)
-				| ((GLuint)id4[2] << 16)
-				| ((GLuint)id4[3] << 24);
-			if (vertID != std::numeric_limits<GLuint>::max())
+			states->game.intrctParam.dat.ball.startPos.x = ballPos.x - ANNO_BALL_RADIUS;
+			states->game.intrctParam.dat.ball.startPos.y = ballPos.y - ANNO_BALL_RADIUS;
+			states->game.intrctParam.dat.ball.startPos.z = ballPos.z - ANNO_BALL_RADIUS;
+			ball.transform = glm::translate(glm::identity<glm::mat4>(), ballPos);
+			ball.transform = glm::scale(ball.transform, glm::vec3{ ANNO_BALL_DIAMETER });
+
+			ball.projectedPos = VP2[vr::Eye_Left] * glm::vec4{ ballPos,1.f };
+			ball.projectedPos /= ball.projectedPos.w;
+
+			ball.screenPos.x = .5f * (ball.projectedPos.x + 1.f);
+			ball.screenPos.y = .5f * (ball.projectedPos.y + 1.f);
+			if (states->game.shouldSelectVertex
+				&& ball.screenPos.x >= 0 && ball.screenPos.x < 1.f
+				&& ball.screenPos.y >= 0 && ball.screenPos.y < 1.f)
 			{
-				pathRenderer->startPath(pathRenderer->getPathIDOf(vertID));
-				pathRenderer->startVertex(vertID);
+				std::array<GLubyte, 4> id4;
+				glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
+				glPixelStorei(GL_PACK_ALIGNMENT, 1);
+				glReadPixels(
+					(GLint)floor(states->HMDRenderSizePerEye[0] * ball.screenPos.x),
+					(GLint)floor(states->HMDRenderSizePerEye[1] * ball.screenPos.y),
+					1, 1, GL_RGBA, GL_UNSIGNED_BYTE, id4.data());
+				GLuint vertID = (GLuint)id4[0]
+					| ((GLuint)id4[1] << 8)
+					| ((GLuint)id4[2] << 16)
+					| ((GLuint)id4[3] << 24);
+				if (vertID != std::numeric_limits<GLuint>::max())
+				{
+					pathRenderer->startPath(pathRenderer->getPathIDOf(vertID));
+					pathRenderer->startVertex(vertID);
+				}
 			}
+		}
+		else if (states->game.intrctParam.mode ==
+			CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser)
+		{
+			states->game.intrctParam.dat.laser.ori = handPos;
+			states->game.intrctParam.dat.laser.drc = -handZ;
 		}
 	}
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
@@ -591,10 +599,22 @@ void kouek::MainApp::drawScene()
 
 		if (states->hand2[VRContext::Hand_Right].show)
 		{
-			glUniformMatrix4fv(
-				shaders->depthShader.matPos, 1, GL_FALSE,
-				(GLfloat*)&ball.MVP2[eyeIdx]);
-			ball.model->draw();
+			if (states->game.intrctParam.mode ==
+				CompVolumeFAVRRenderer::InteractionMode::AnnotationBall)
+			{
+				glUniformMatrix4fv(
+					shaders->depthShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&ball.MVP2[eyeIdx]);
+				ball.model->draw();
+			}
+			else if (states->game.intrctParam.mode ==
+				CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser)
+			{
+				glUniformMatrix4fv(
+					shaders->depthShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&handMVP22[eyeIdx][VRContext::Hand_Right]);
+				laser.model->draw();
+			}
 		}
 
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
@@ -611,18 +631,21 @@ void kouek::MainApp::drawScene()
 		{
 			shaders->zeroDepthShader.program.bind();
 			glUniformMatrix4fv(
-				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+				shaders->zeroDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
 			if (states->game.intrctActMode == InteractionActionMode::AddPath)
 				glPointSize(GLPathRenderer::rootVertSize);
 			else
 				glPointSize(GLPathRenderer::endVertSize);
 			intrctPoint.model->draw();
 		}
-		else if (eyeIdx == vr::Eye_Left)
+		else if (states->game.intrctActMode == InteractionActionMode::SelectVertex
+			&& states->game.intrctParam.mode ==
+			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall
+			&& eyeIdx == vr::Eye_Left)
 		{
 			shaders->zeroDepthShader.program.bind();
 			glUniformMatrix4fv(
-				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
+				shaders->zeroDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
 			glPointSize(GLPathRenderer::selectVertSize);
 			intrctPoint.model->draw();
 		}
@@ -660,12 +683,22 @@ void kouek::MainApp::drawScene()
 		}
 
 		if (states->hand2[VRContext::Hand_Right].show)
-		{
-			glUniformMatrix4fv(
-				shaders->colorShader.matPos, 1, GL_FALSE,
-				(GLfloat*)&ball.MVP2[eyeIdx]);
-			ball.model->draw();
-		}
+			if (states->game.intrctParam.mode ==
+				CompVolumeFAVRRenderer::InteractionMode::AnnotationBall)
+			{
+				glUniformMatrix4fv(
+					shaders->colorShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&ball.MVP2[eyeIdx]);
+				ball.model->draw();
+			}
+			else if (states->game.intrctParam.mode ==
+				CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser)
+			{
+				glUniformMatrix4fv(
+					shaders->colorShader.matPos, 1, GL_FALSE,
+					(GLfloat*)&handMVP22[eyeIdx][VRContext::Hand_Right]);
+				laser.model->draw();
+			}
 
 		if (static_cast<uint32_t>(states->game.intrctActMode) & (
 			static_cast<uint32_t>(InteractionActionMode::AddPath)
@@ -679,7 +712,10 @@ void kouek::MainApp::drawScene()
 				glPointSize(GLPathRenderer::endVertSize);
 			intrctPoint.model->draw();
 		}
-		else if (eyeIdx == vr::Eye_Left)
+		else if (states->game.intrctActMode == InteractionActionMode::SelectVertex
+			&& states->game.intrctParam.mode ==
+			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall
+			&& eyeIdx == vr::Eye_Left)
 		{
 			glUniformMatrix4fv(
 				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
@@ -727,12 +763,20 @@ void kouek::MainApp::drawScene()
 	{
 		volumeRender.renderer->render(nullptr, states->renderTar);
 		intrctPoint.model->setPosData(glm::vec3(ball.projectedPos));
-		states->game.intrctPos = ball.transform[3];
+		if (states->game.intrctParam.mode ==
+			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall)
+			states->game.intrctPos = ball.transform[3];
 	}
 
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	if (states->meshAlpha > 0)
+	{
+		glBlendColor(0, 0, 0, states->meshAlpha);
+		glBlendFunc(GL_SRC_ALPHA, GL_CONSTANT_ALPHA);
+	}
+	else
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	shaders->diffuseShader.program.bind();
 	glUniformMatrix4fv(
 		shaders->diffuseShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);

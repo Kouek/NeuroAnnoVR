@@ -19,6 +19,7 @@ namespace kouek
 		Ui::RightHandUI* ui;
 		
 		QButtonGroup* intrctActModes;
+		QButtonGroup* intrctModes;
 
 	public:
 		explicit RightHandUI(QWidget* parent = Q_NULLPTR);
@@ -26,6 +27,7 @@ namespace kouek
 
 	signals:
 		void interactionActionModeBtnsClicked(int id);
+		void interactionModeBtnsClicked(int id);
 	};
 }
 

@@ -250,6 +250,26 @@ kouek::QtEventHandler::QtEventHandler(
 			}
 		});
 	// LeftHandUI
+	QObject::connect(dynamic_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
+		&LeftHandUI::moveModeBtnsClicked, [&](int id) {
+			switch (id)
+			{
+			case 0:
+				states->cameraMountPos = AppStates::CAM_MOUNTED_POS_IN_WANDER;
+				states->game.moveMode = MoveMode::Wander;
+				break;
+			case 1:
+				states->cameraMountPos = { states->subrgn.halfW,
+					states->subrgn.halfH,states->subrgn.halfD };
+				states->game.moveMode = MoveMode::Focus;
+				break;
+			}
+			states->showHandUI2 = { false };
+		});
+	QObject::connect(dynamic_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
+		&LeftHandUI::meshAlphaSliderChanged, [&](float alpha) {
+			states->meshAlpha = alpha;
+		});
 	// RightHandUI
 	QObject::connect(dynamic_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
 		&RightHandUI::interactionActionModeBtnsClicked, [&](int id) {
@@ -261,6 +281,18 @@ kouek::QtEventHandler::QtEventHandler(
 				states->game.intrctActMode = InteractionActionMode::AddPath; break;
 			case 2:
 				states->game.intrctActMode = InteractionActionMode::AddVertex; break;
+			}
+		});
+	QObject::connect(dynamic_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
+		&RightHandUI::interactionModeBtnsClicked, [&](int id) {
+			switch (id)
+			{
+			case 0:
+				states->game.intrctParam.mode = 
+					CompVolumeFAVRRenderer::InteractionMode::AnnotationBall; break;
+			case 1:
+				states->game.intrctParam.mode =
+					CompVolumeFAVRRenderer::InteractionMode::AnnotationLaser; break;
 			}
 		});
 }

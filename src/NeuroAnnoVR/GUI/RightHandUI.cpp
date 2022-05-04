@@ -17,6 +17,14 @@ kouek::RightHandUI::RightHandUI(QWidget* parent)
 		&QButtonGroup::buttonClicked), [&](int id) {
 			emit interactionActionModeBtnsClicked(id);
 		});
+
+	intrctModes = new QButtonGroup(this);
+	intrctModes->addButton(ui->pushButtonAnnoBall, 0);
+	intrctModes->addButton(ui->pushButtonAnnoLaser, 1);
+	connect(intrctModes, static_cast<void(QButtonGroup::*)(int)>(
+		&QButtonGroup::buttonClicked), [&](int id) {
+			emit interactionModeBtnsClicked(id);
+		});
 }
 
 kouek::RightHandUI::~RightHandUI()
