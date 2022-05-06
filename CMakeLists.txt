@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
-project(NeuroAnnoVR LANGUAGES CXX C CUDA)
+project("NeuroAnnoVR" LANGUAGES CXX C CUDA)
 
-option(${PROJECT_NAME}_BUILD_DEMO "Build all demos" ON)
+option(${PROJECT_NAME}_BUILD_DEMO "Build all demos and tests" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,7 +22,7 @@ configure_file("${INCLUDE_DIR}/CMakeIn.h.in" "${INCLUDE_DIR}/CMakeIn.h")
 ## Note 2:
 ## Make sure Qt5 shared libs path are in ENV_PATH
 ## eg. In Windows, append system/user PATH with "D:\Qt\Qt5.9.8\5.9.8\msvc2017_64\bin"
-foreach(mod "Core" "Gui" "Widgets")
+foreach(mod "Core" "Gui" "Widgets" "Charts")
 	find_package("Qt5" COMPONENTS ${mod} REQUIRED)
 	list(APPEND Qt5_LIBS "Qt5::${mod}")
 endforeach()
@@ -74,5 +74,9 @@ include("${THIRDPARTY_DIR}/spdlog.cmake")
 include_directories("${THIRDPARTY_DIR}/glad/include")
 include_directories(${THIRDPARTY_DIR})
 
+message(STATUS "${PROJECT_NAME}_BUILD_DEMO: ${${PROJECT_NAME}_BUILD_DEMO}")
+
 add_subdirectory("src")
-add_subdirectory("test")
+if(${${PROJECT_NAME}_BUILD_DEMO})
+	add_subdirectory("test")
+endif()
