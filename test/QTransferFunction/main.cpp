@@ -12,14 +12,14 @@ int main(int argc, char** argv)
 
 	VolumeConfig cfg(std::string(PROJECT_SOURCE_DIR)
 		+ "/cfg/VolumeCfg.json");
-	QTransferFunctionView view;
+	QTransferFunctionWidget view;
 	std::map<uint8_t, std::array<qreal, 4>> tfDat;
 	for (auto& tfPt : cfg.getTF().points)
 		tfDat.emplace(std::piecewise_construct,
 			std::forward_as_tuple(tfPt.key),
 			std::forward_as_tuple(tfPt.value));
 	view.loadFromTFData(tfDat);
-	view.showMaximized();
+	view.show();
 
 	return app.exec();
 }
