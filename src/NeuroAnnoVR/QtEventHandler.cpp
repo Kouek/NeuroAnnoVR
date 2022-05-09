@@ -8,7 +8,6 @@ kouek::HandUIHandler::HandUIHandler(
 	:glCtxProvider(glCtxProvider), states(states)
 {
 	glCtxProvider->getVRView()->makeCurrent();
-	ellipse = new QGraphicsEllipseItem(0, 0, 5.f, 5.f);
 
 	wdgt2[VRContext::Hand_Left] = new LeftHandUI();
 	wdgt2[VRContext::Hand_Right] = new RightHandUI();
@@ -21,7 +20,7 @@ kouek::HandUIHandler::HandUIHandler(
 		FBO2[hndIdx] = new QOpenGLFramebufferObject(
 			wdgt2[hndIdx]->size(), GL_TEXTURE_2D);
 		glDvc2[hndIdx] = new QOpenGLPaintDevice(
-			FBO2[VRContext::Hand_Left]->size());
+			FBO2[hndIdx]->size());
 		pntr2[hndIdx] = new QPainter(glDvc2[hndIdx]);
 		});
 
@@ -186,6 +185,17 @@ kouek::QtEventHandler::QtEventHandler(
 				CompVolumeFAVRRenderer::RenderTarget::Last) - 1;
 		renderTar = static_cast<CompVolumeFAVRRenderer::RenderTarget>(idx);
 	};
+	auto computeUITransform = [&](AppStates* states) {
+		auto& [R, F, U, PL, PR] = states->camera.getRFUP2();
+		auto pos = states->camera.getHeadPos()
+			+ AppStates::UITranslateToHead.x * R
+			+ AppStates::UITranslateToHead.y * U
+			- AppStates::UITranslateToHead.z * F;
+		states->handUITransform[0] = glm::vec4{ R, 0 };
+		states->handUITransform[1] = glm::vec4{ U, 0 };
+		states->handUITransform[2] = glm::vec4{ -F, 0 };
+		states->handUITransform[3] = glm::vec4{ pos, 1.f };
+	};
 	QObject::connect(sender->getVRView(), &VRView::keyPressed,
 		[&](int key, int functionKey) {
 			switch (key)
@@ -242,15 +252,17 @@ kouek::QtEventHandler::QtEventHandler(
 			case Qt::Key_L:
 				states->showHandUI2[VRContext::Hand_Left] = !states->showHandUI2[VRContext::Hand_Left];
 				states->showHandUI2[VRContext::Hand_Right] = false;
+				computeUITransform(states.get());
 				break;
 			case Qt::Key_R:
 				states->showHandUI2[VRContext::Hand_Right] = !states->showHandUI2[VRContext::Hand_Right];
 				states->showHandUI2[VRContext::Hand_Left] = false;
+				computeUITransform(states.get());
 				break;
 			}
 		});
 	// LeftHandUI
-	QObject::connect(dynamic_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
+	QObject::connect(static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
 		&LeftHandUI::moveModeBtnsClicked, [&](int id) {
 			switch (id)
 			{
@@ -266,12 +278,16 @@ kouek::QtEventHandler::QtEventHandler(
 			}
 			states->showHandUI2 = { false };
 		});
-	QObject::connect(dynamic_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
+	QObject::connect(static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
 		&LeftHandUI::meshAlphaSliderChanged, [&](float alpha) {
 			states->meshAlpha = alpha;
 		});
+	QObject::connect(static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
+		&LeftHandUI::tfChanged, [&]() {
+			isTFChanged = true;
+		});
 	// RightHandUI
-	QObject::connect(dynamic_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
+	QObject::connect(static_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
 		&RightHandUI::interactionActionModeBtnsClicked, [&](int id) {
 			switch (id)
 			{
@@ -281,9 +297,13 @@ kouek::QtEventHandler::QtEventHandler(
 				states->game.intrctActMode = InteractionActionMode::AddPath; break;
 			case 2:
 				states->game.intrctActMode = InteractionActionMode::AddVertex; break;
+			case 3:
+				states->game.intrctActMode = InteractionActionMode::DeleteVertex; break;
+			case 4:
+				states->game.intrctActMode = InteractionActionMode::JoinPath; break;
 			}
 		});
-	QObject::connect(dynamic_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
+	QObject::connect(static_cast<RightHandUI*>(handUI.wdgt2[VRContext::Hand_Right]),
 		&RightHandUI::interactionModeBtnsClicked, [&](int id) {
 			switch (id)
 			{
@@ -303,10 +323,42 @@ void kouek::QtEventHandler::update()
 		|| states->showHandUI2[VRContext::Hand_Right])
 	{
 		if (!handUI.timer->isActive())
-			handUI.timer->start();
+			handUI.timer->start();			
 	}
 	else
 		handUI.timer->stop();
+
+	if (states->showHandUI2[VRContext::Hand_Left])
+	{
+		if (!lastLeftHandUIShown)
+		{
+			// every time show LeftHandUI, reload TF
+			std::map<uint8_t, std::array<qreal, 4>> tfDat;
+			for (auto& tfPt : states->tf.points)
+				tfDat.emplace(std::piecewise_construct,
+					std::forward_as_tuple(tfPt.key),
+					std::forward_as_tuple(tfPt.value));
+			static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left])
+				->setTFFromTFData(tfDat);
+
+			lastLeftHandUIShown = true;
+		}
+	}
+	else
+	{
+		if (lastLeftHandUIShown && isTFChanged)
+		{
+			const auto& tfDat = static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left])
+				->getTFData();
+			states->tf.points.clear();
+			for (const auto& [key, pair] : tfDat)
+				states->tf.points.emplace_back(
+					vs::TFPoint(key, std::get<std::array<qreal, 4>>(pair)));
+			states->renderer->setTransferFunc(states->tf);
+			isTFChanged = false;
+		}
+		lastLeftHandUIShown = false;
+	}
 
 	if (moveSteps[0] != 0 || moveSteps[1] != 0 || moveSteps[2] != 0)
 	{

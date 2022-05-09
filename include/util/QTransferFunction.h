@@ -135,10 +135,10 @@ namespace kouek
 		{
 			intrctPoint->clear();
 		}
-		inline void setInteractionPoint(const QPointF& uiPos)
+		inline void setInteractionPoint(const QPointF& newPt)
 		{
 			intrctPoint->clear();
-			intrctPoint->append(mapToValue(uiPos));
+			intrctPoint->append(newPt);
 		}
 		inline void setTFPointFromInteractionPoint(const QColor& color)
 		{
@@ -148,9 +148,8 @@ namespace kouek
 				color.blueF(), pt.y() };
 			setTFPoint(key, val);
 		}
-		inline uint8_t resetTFPoint(uint8_t key, const QPointF& uiPos)
+		inline uint8_t resetTFPoint(uint8_t key, const QPointF& newPt)
 		{
-			const auto newPt = mapToValue(uiPos);
 			uint8_t newKey = newPt.x();
 			auto [pt, newVal] = tfDat.at(key);
 			newVal[3] = newPt.y();
@@ -183,16 +182,27 @@ namespace kouek
 			tfArea->setUpperSeries(tfLine);
 
 			QLinearGradient gradient(QPointF(0, 0), QPointF(1.0, 0));
+			qreal length = 255.0;
+			qreal start = 0;
+			if (auto [beg, rbeg] = std::tuple{ tfDat.begin(),tfDat.rbegin() };
+				beg != tfDat.end() && rbeg != tfDat.rend())
+			{
+				start = std::get<QPointF>(beg->second).x();
+				if (beg->first != rbeg->first)
+					length = std::get<QPointF>(rbeg->second).x()
+					- std::get<QPointF>(beg->second).x();
+			}
 			for (const auto& pair : tfDat)
 			{
 				const auto& [tfPt, val] = pair.second;
-				gradient.setColorAt(tfPt.x() / 255,
+				gradient.setColorAt(
+					(tfPt.x() -start) / length,
 					QColor(
 						(int)(val[0] * 255),
 						(int)(val[1] * 255),
 						(int)(val[2] * 255)));
 			}
-			gradient.setCoordinateMode(QGradient::ObjectMode);
+			gradient.setCoordinateMode(QGradient::ObjectBoundingMode);
 			tfArea->setBrush(gradient);
 
 			// axes shoud be updated too
@@ -209,6 +219,7 @@ namespace kouek
 		Q_OBJECT
 
 	private:
+		bool isTFChanged = false;
 		int exstIntrctKey = -1;
 
 	public:
@@ -238,13 +249,13 @@ namespace kouek
 		}
 		inline void deleteExstIntrctPnt()
 		{
-			if (!hasExstIntrctPnt()) return;
 			auto tf = static_cast<QTransferFunction*>(chart());
 			tf->deleteTFPoint(exstIntrctKey);
 		}
 
 	signals:
 		void pntInfoChnged(const QString& info);
+		void tfChanged();
 
 	protected:
 		void mousePressEvent(QMouseEvent* e) override
@@ -252,13 +263,12 @@ namespace kouek
 			constexpr qreal ERR = 100.0;
 
 			exstIntrctKey = -1;
-			auto currPos = e->pos();
 			qreal minDiffSqr = std::numeric_limits<qreal>::max();
 			auto tf = static_cast<QTransferFunction*>(chart());
 			for (const auto& [key, pair] : tf->getTFData())
 			{
 				const auto& [pt, val] = pair;
-				QPointF dlt = tf->mapToPosition(pt) - currPos;
+				QPointF dlt = tf->mapToPosition(pt) - e->pos();
 				qreal diffSqr = QPointF::dotProduct(dlt, dlt);
 				if (diffSqr <= ERR && diffSqr < minDiffSqr)
 				{
@@ -270,17 +280,30 @@ namespace kouek
 			if (hasExstIntrctPnt())
 				tf->unsetInteractionPoint();
 			else
-				tf->setInteractionPoint(currPos);
+			{
+				auto newPt = tf->mapToValue(e->pos());
+				if (newPt.x() < 0) newPt.setX(0);
+				if (newPt.x() >= 255.0) newPt.setX(255.f);
+				if (newPt.y() < 0)newPt.setY(0);
+				if (newPt.y() >= 1.0)newPt.setY(1.f);
+				tf->setInteractionPoint(newPt);
+			}
 		}
 		void mouseMoveEvent(QMouseEvent* e) override
 		{
+			auto tf = static_cast<QTransferFunction*>(chart());
 			if ((e->buttons() & Qt::LeftButton) != 0
 				&& hasExstIntrctPnt())
 			{
-				auto tf = static_cast<QTransferFunction*>(chart());
-				auto newKey = tf->resetTFPoint(exstIntrctKey, e->pos());
+				auto newPt = tf->mapToValue(e->pos());
+				if (newPt.x() < 0) newPt.setX(0);
+				if (newPt.x() >= 255.0) newPt.setX(255.f);
+				if (newPt.y() < 0)newPt.setY(0);
+				if (newPt.y() >= 1.0)newPt.setY(1.f);
+				auto newKey = tf->resetTFPoint(exstIntrctKey, newPt);
 				exstIntrctKey = newKey;
 				const auto& [pt, val] = tf->getTFData().at(exstIntrctKey);
+				isTFChanged = true;
 				emit pntInfoChnged(QString("%0 -> (%1, %2, %3, %4)")
 					.arg(exstIntrctKey)
 					.arg(val[0]).arg(val[1]).arg(val[2]).arg(val[3]));
@@ -301,6 +324,12 @@ namespace kouek
 				const auto& pt = tf->getInteractionPoint();
 				emit pntInfoChnged(QString("(%0, %1)")
 					.arg(pt.x()).arg(pt.y()));
+			}
+
+			if (isTFChanged)
+			{
+				emit tfChanged();
+				isTFChanged = false;
 			}
 		}
 	};
@@ -364,6 +393,7 @@ namespace kouek
 			connect(pushButtonAddPt, &QPushButton::clicked,
 				[&]() {
 					if (tfView->hasExstIntrctPnt()) return;
+					pntInfo->hide();
 					tfView->hide();
 					colorDiag->show();
 					for (auto btn : btnList)
@@ -372,15 +402,21 @@ namespace kouek
 			connect(pushButtonChngColor, &QPushButton::clicked,
 				[&]() {
 					if (!tfView->hasExstIntrctPnt()) return;
+					pntInfo->hide();
 					tfView->hide();
 					colorDiag->show();
 					for (auto btn : btnList)
 						btn->hide();
 				});
 			connect(pushButtonDelPt, &QPushButton::clicked,
-				tfView, &QTransferFunctionView::deleteExstIntrctPnt);
+				[&]() {
+					if (!tfView->hasExstIntrctPnt()) return;
+					tfView->deleteExstIntrctPnt();
+					emit tfChanged();
+				});
 			connect(colorDiag, &QColorDialog::rejected,
 				[&]() {
+					pntInfo->show();
 					tfView->show();
 					colorDiag->hide();
 					for (auto btn : btnList)
@@ -389,15 +425,16 @@ namespace kouek
 			connect(colorDiag, &QColorDialog::colorSelected,
 				[&](const QColor& color) {
 					tfView->setInteractionPointColor(color);
+					pntInfo->show();
 					tfView->show();
 					colorDiag->hide();
 					for (auto btn : btnList)
 						btn->show();
+					emit tfChanged();
 				});
-		}
-		inline const QtCharts::QChart& getTF() const
-		{
-			return *tf;
+
+			connect(tfView, &QTransferFunctionView::tfChanged,
+				this, &QTransferFunctionWidget::tfChanged);
 		}
 		inline void loadFromTFData(
 			const std::map<uint8_t, std::array<qreal, 4>>& tfDat)
@@ -406,6 +443,13 @@ namespace kouek
 			for (const auto& [key, val] : tfDat)
 				tf->setTFPoint(key, val);
 		}
+		inline const auto& getTFData() const
+		{
+			return tf->getTFData();
+		}
+
+	signals:
+		void tfChanged();
 	};
 }
 

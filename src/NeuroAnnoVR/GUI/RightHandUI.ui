@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>300</height>
+    <height>400</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -42,7 +42,34 @@ QGroupBox::title  {
       <string>Interaction Action Modes</string>
      </property>
      <layout class="QGridLayout" name="gridLayout_2">
-      <item row="0" column="5">
+      <item row="1" column="1">
+       <widget class="QPushButton" name="pushButtonDeleteVertex">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QPushButton{
+	color: rgb(255, 255, 255);
+	font: 10pt &quot;Times New Roman&quot;;
+	background-color: rgb(170, 172, 208);
+}
+QPushButton:hover{
+	background: transparent;
+	border: 2px solid #aaacd0;
+}</string>
+        </property>
+        <property name="text">
+         <string>Delete Vertex</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="6">
        <widget class="QPushButton" name="pushButtonAddVertex">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -102,7 +129,7 @@ QPushButton:hover{
         </property>
        </widget>
       </item>
-      <item row="0" column="4">
+      <item row="0" column="5">
        <widget class="QPushButton" name="pushButtonAddPath">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -132,60 +159,6 @@ QPushButton:hover{
         </property>
        </widget>
       </item>
-      <item row="1" column="1">
-       <widget class="QPushButton" name="pushButtonDeleteVertex">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton{
-	color: rgb(255, 255, 255);
-	font: 10pt &quot;Times New Roman&quot;;
-	background-color: rgb(170, 172, 208);
-}
-QPushButton:hover{
-	background: transparent;
-	border: 2px solid #aaacd0;
-}</string>
-        </property>
-        <property name="text">
-         <string>Delete Vertex</string>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="4">
-       <widget class="QPushButton" name="pushButtonSpilitSubPath">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">QPushButton{
-	color: rgb(255, 255, 255);
-	font: 10pt &quot;Times New Roman&quot;;
-	background-color: rgb(170, 172, 208);
-}
-QPushButton:hover{
-	background: transparent;
-	border: 2px solid #aaacd0;
-}</string>
-        </property>
-        <property name="text">
-         <string>Spilit</string>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
       <item row="1" column="5">
        <widget class="QPushButton" name="pushButtonJoinPath">
         <property name="sizePolicy">
@@ -206,7 +179,7 @@ QPushButton:hover{
 }</string>
         </property>
         <property name="text">
-         <string>Join</string>
+         <string>Join Path</string>
         </property>
         <property name="checkable">
          <bool>true</bool>

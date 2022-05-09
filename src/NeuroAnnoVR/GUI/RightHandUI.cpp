@@ -11,8 +11,7 @@ kouek::RightHandUI::RightHandUI(QWidget* parent)
 	intrctActModes->addButton(ui->pushButtonAddPath, 1);
 	intrctActModes->addButton(ui->pushButtonAddVertex, 2);
 	intrctActModes->addButton(ui->pushButtonDeleteVertex, 3);
-	intrctActModes->addButton(ui->pushButtonSpilitSubPath, 4);
-	intrctActModes->addButton(ui->pushButtonJoinPath, 5);
+	intrctActModes->addButton(ui->pushButtonJoinPath, 4);
 	connect(intrctActModes, static_cast<void(QButtonGroup::*)(int)>(
 		&QButtonGroup::buttonClicked), [&](int id) {
 			emit interactionActionModeBtnsClicked(id);

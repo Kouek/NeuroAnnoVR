@@ -470,7 +470,7 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
         }
         break;
 	case InteractionActionMode::AddVertex:
-        if (pressed && !lastPressed && isRhtTrigClicked)
+        if (pressed && !lastPressed)
         {
             auto id = states->pathRenderer->addSubPath();
             states->pathRenderer->startSubPath(id);
@@ -502,6 +502,12 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
             needCheckDistWhenReleased = true;
         }
 		break;
+    case InteractionActionMode::DeleteVertex:
+        if (pressed && !lastPressed)
+            states->game.shouldSelectVertex = true;
+        if (pressed && isRhtTrigClicked)
+            states->pathRenderer->deleteVertex(states->pathRenderer->getSelectedVertID());
+        break;
 	default:
 		break;
 	}

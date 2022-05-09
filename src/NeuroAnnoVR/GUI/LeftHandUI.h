@@ -4,6 +4,8 @@
 #include <QtWidgets/qwidget.h>
 #include <QtWidgets/qbuttongroup.h>
 
+#include <util/QTransferFunction.h>
+
 namespace Ui
 {
 	class LeftHandUI;
@@ -19,14 +21,26 @@ namespace kouek
 		Ui::LeftHandUI* ui;
 
 		QButtonGroup* moveModes;
+		QTransferFunctionWidget* tfWdgt;
 
 	public:
 		explicit LeftHandUI(QWidget* parent = Q_NULLPTR);
 		~LeftHandUI();
 
+		inline void setTFFromTFData(
+			const std::map<uint8_t, std::array<qreal, 4>>& tfDat)
+		{
+			tfWdgt->loadFromTFData(tfDat);
+		}
+		inline const auto& getTFData() const
+		{
+			return tfWdgt->getTFData();
+		}
+
 	signals:
 		void moveModeBtnsClicked(int id);
 		void meshAlphaSliderChanged(float alpha);
+		void tfChanged();
 	};
 }
 

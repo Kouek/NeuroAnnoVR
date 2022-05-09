@@ -251,7 +251,7 @@ namespace kouek
 			pathIDOfVerts[rootID] = pathID;
 
 			verts[rootID] = rootPos;
-			std::array<GLfloat, 7> id4{
+			std::array<GLfloat, 7> dat7{
 				rootPos.x,  rootPos.y, rootPos.z,
 				(float)((rootID & 0x000000ff) >> 0) / 255.f,
 				(float)((rootID & 0x0000ff00) >> 8) / 255.f,
@@ -260,7 +260,7 @@ namespace kouek
 			};
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
 			glBufferSubData(GL_ARRAY_BUFFER,
-				VERT_DAT_STRIDE * rootID, VERT_DAT_STRIDE, id4.data());
+				VERT_DAT_STRIDE * rootID, VERT_DAT_STRIDE, dat7.data());
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 			paths.emplace(std::piecewise_construct,
 				std::forward_as_tuple(pathID),
@@ -272,12 +272,39 @@ namespace kouek
 		{
 			std::unordered_set<GLuint> recycledVertIDs; // de-repeat
 			for (auto& [id, subPath] : paths.at(pathID).subPaths)
-				for (auto& vertID : subPath.verts)
+				for (GLuint vertID : subPath.verts)
 					recycledVertIDs.emplace(vertID);
 			for (GLuint vertID : recycledVertIDs)
 				availableVertIDs.emplace(vertID);
 			availablePathIDs.emplace(pathID);
 			paths.erase(pathID);
+		}
+		inline void joinPath(GLuint v0, GLuint v1)
+		{
+			GLuint p0 = pathIDOfVerts[v0];
+			GLuint p1 = pathIDOfVerts[v1];
+			if (p0 == p1) return;
+			Path* inPath, * outPath;
+			GLuint outPathID;
+			if (paths.at(p0).subPaths.size()
+				< paths.at(p1).subPaths.size())
+			{
+				inPath = &paths.at(p0);
+				outPath = &paths.at(p1);
+				outPathID = p1;
+			}
+			else
+			{
+				inPath = &paths.at(p1);
+				outPath = &paths.at(p0);
+				outPathID = p0;
+			}
+			// update vertex data
+			for (auto& [id, subPath] : inPath->subPaths)
+				for (GLuint vertID : subPath.verts)
+					pathIDOfVerts[vertID] = outPathID;
+			// transfer sub path
+			// TODO
 		}
 		inline void startPath(GLuint pathID)
 		{
@@ -316,7 +343,7 @@ namespace kouek
 
 			verts[vertID] = pos;
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
-			std::array<GLfloat, 7> id4{
+			std::array<GLfloat, 7> dat7{
 				pos.x, pos.y, pos.z,
 				(float)((vertID & 0x000000ff) >> 0) / 255.f,
 				(float)((vertID & 0x0000ff00) >> 8) / 255.f,
@@ -324,7 +351,7 @@ namespace kouek
 				(float)((vertID & 0xff000000) >> 24) / 255.f
 			};
 			glBufferSubData(GL_ARRAY_BUFFER,
-				VERT_DAT_STRIDE * vertID, VERT_DAT_STRIDE, id4.data());
+				VERT_DAT_STRIDE * vertID, VERT_DAT_STRIDE, dat7.data());
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 			auto& subPath = paths.at(selectedPathID)
@@ -340,6 +367,27 @@ namespace kouek
 			glBufferSubData(GL_ARRAY_BUFFER,
 				VERT_DAT_STRIDE * vertID, VERT_DAT_POS_SIZE, &pos);
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		}
+		inline void deleteVertex(GLuint vertID)
+		{
+			GLuint linkCnt = 0;
+			GLuint tarSPID;
+			SubPath* tarSP = nullptr;
+			Path& path = paths.at(selectedPathID);
+			for (auto& [id, subPath] : path.subPaths)
+				for (GLuint vert : subPath.verts)
+					if (vert == vertID)
+					{
+						tarSPID = id;
+						tarSP = &subPath;
+						++linkCnt;
+					}
+			if (linkCnt == 0 || linkCnt > 1)
+				return; // vertex doesnt' exist or is not an end vertex
+			tarSP->verts.pop_back();
+			if (tarSP->verts.size() == 0)
+				path.subPaths.erase(tarSPID);
+			availableVertIDs.push(vertID);
 		}
 		inline void startVertex(GLuint vertID)
 		{

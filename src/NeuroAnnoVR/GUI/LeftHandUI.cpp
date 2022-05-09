@@ -6,6 +6,12 @@ kouek::LeftHandUI::LeftHandUI(QWidget* parent)
 {
 	ui->setupUi(this);
 
+	tfWdgt = new QTransferFunctionWidget();
+	tfWdgt->setStyleSheet(
+		"font: 20pt \"Times New Roman\";");
+	ui->groupBoxTF->setLayout(new QVBoxLayout());
+	ui->groupBoxTF->layout()->addWidget(tfWdgt);
+
 	moveModes = new QButtonGroup(this);
 	moveModes->addButton(ui->pushButtonWander, 0);
 	moveModes->addButton(ui->pushButtonFocus, 1);
@@ -13,12 +19,14 @@ kouek::LeftHandUI::LeftHandUI(QWidget* parent)
 		&QButtonGroup::buttonClicked), [&](int id) {
 			emit moveModeBtnsClicked(id);
 		});
-	connect(ui->horizontalSliderMeshAlpha, &QSlider::valueChanged,
+	connect(ui->verticalSliderMeshAlpha, &QSlider::valueChanged,
 		[&](int val) {
-			double alpha = (double)val / (double)ui->horizontalSliderMeshAlpha->maximum();
+			double alpha = (double)val / (double)ui->verticalSliderMeshAlpha->maximum();
 			ui->labelMeshAlpha->setText(QString("%1").arg(alpha, 0, 'f', 2));
 			emit meshAlphaSliderChanged(alpha);
 		});
+	connect(tfWdgt, &QTransferFunctionWidget::tfChanged,
+		this, &LeftHandUI::tfChanged);
 }
 
 kouek::LeftHandUI::~LeftHandUI()

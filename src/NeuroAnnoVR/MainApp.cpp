@@ -198,8 +198,10 @@ static void initVolumeRender(
 			volumeRender.volume->GetVolumeSpaceX(),
 			volumeRender.volume->GetVolumeSpaceY());
 		AppStates::subrgnMoveSensity = AppStates::subrgnMoveSensityFine * 5.f;
+		
 		volumeRender.renderer->setVolume(volumeRender.volume);
 		volumeRender.renderer->setTransferFunc(cfg.getTF());
+		states->tf.points = cfg.getTF().points;
 	}
 	catch (std::exception& e)
 	{
@@ -420,6 +422,22 @@ int kouek::MainApp::run()
 
 void kouek::MainApp::drawUI()
 {
+	static std::array<glm::mat4,2> handUIScale2 = [&]() -> auto {
+		auto lftSize = qtEvntHndler->getHandUISize(VRContext::Hand_Left);
+		auto rhtSize = qtEvntHndler->getHandUISize(VRContext::Hand_Right);
+		glm::vec3 lftScale{
+			lftSize.width() < lftSize.height() ? 1.f : 1.f * lftSize.width() / lftSize.height(),
+			lftSize.width() > lftSize.height() ? 1.f : 1.f * lftSize.height() / lftSize.width(),
+			1.f };
+		glm::vec3 rhtScale{
+			rhtSize.width() < rhtSize.height() ? 1.f : 1.f * rhtSize.width() / rhtSize.height(),
+			rhtSize.width() > rhtSize.height() ? 1.f : 1.f * rhtSize.height() / rhtSize.width(),
+			1.f };
+		return std::array{
+			glm::scale(glm::identity<glm::mat4>(), lftScale),
+			glm::scale(glm::identity<glm::mat4>(), rhtScale)};
+	}();
+
 	if (states->hand2[VRContext::Hand_Right].show)
 	{
 		// compute intersection pos of laser and UI plane
@@ -438,17 +456,21 @@ void kouek::MainApp::drawUI()
 
 		// convert intersection pos to normalized cursor pos
 		{
+			const auto& handUIScale = states->showHandUI2[VRContext::Hand_Left] ?
+				handUIScale2[VRContext::Hand_Left] : handUIScale2[VRContext::Hand_Right];
 			auto R = glm::normalize(glm::vec3(states->handUITransform[0]));
 			auto U = glm::normalize(glm::vec3(states->handUITransform[1]));
-			glm::vec3 tmp = uiCntr - R + U;
+			glm::vec3 tmp = uiCntr - R * handUIScale[0][0] + U * handUIScale[1][1];
 			tmp = laser.intersectPos - tmp;
-			states->laserMouseNormPos.x = glm::dot(tmp, R) * +.5f;
-			states->laserMouseNormPos.y = glm::dot(tmp, U) * -.5f;
+			states->laserMouseNormPos.x = glm::dot(tmp, R) * +.5f / handUIScale[0][0];
+			states->laserMouseNormPos.y = glm::dot(tmp, U) * -.5f / handUIScale[1][1];
 		}
 	}
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
-		handUIMVP2[eyeIdx] = VP2[eyeIdx] * states->handUITransform;
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
+			handUIMVP2[eyeIdx][hndIdx] = VP2[eyeIdx]
+				* states->handUITransform * handUIScale2[hndIdx];
+
 			if (states->hand2[hndIdx].show)
 				handMVP22[eyeIdx][hndIdx] = VP2[eyeIdx]
 				* states->hand2[hndIdx].transform;
@@ -476,10 +498,12 @@ void kouek::MainApp::drawUI()
 
 			if (eyeIdx == vr::Eye_Left)
 			{
+				glPointSize(GLPathRenderer::selectedVertSize);
 				glUniformMatrix4fv(
 					shaders->colorShader.matPos, 1, GL_FALSE,
 					(GLfloat*)&identity);
 				intrctPoint.model->draw();
+				glPointSize(1.f);
 			}
 		}
 
@@ -496,7 +520,7 @@ void kouek::MainApp::drawUI()
 			{
 				glUniformMatrix4fv(
 					shaders->diffuseShader.matPos, 1, GL_FALSE,
-					(GLfloat*)&handUIMVP2[eyeIdx]);
+					(GLfloat*)&handUIMVP2[eyeIdx][hndIdx]);
 				glBindVertexArray(handUIQuad[hndIdx].VAO);
 				glBindTexture(GL_TEXTURE_2D, qtEvntHndler->getHandUITex(hndIdx));
 				glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, (const void*)0);
@@ -638,7 +662,9 @@ void kouek::MainApp::drawScene()
 				glPointSize(GLPathRenderer::endVertSize);
 			intrctPoint.model->draw();
 		}
-		else if (states->game.intrctActMode == InteractionActionMode::SelectVertex
+		else if (static_cast<uint32_t>(states->game.intrctActMode) & (
+			static_cast<uint32_t>(InteractionActionMode::SelectVertex)
+			| static_cast<uint32_t>(InteractionActionMode::DeleteVertex))
 			&& states->game.intrctParam.mode ==
 			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall
 			&& eyeIdx == vr::Eye_Left)
@@ -656,7 +682,9 @@ void kouek::MainApp::drawScene()
 		pathRenderer->draw();
 		});
 
-	if (states->game.intrctActMode == InteractionActionMode::SelectVertex)
+	if (static_cast<uint32_t>(states->game.intrctActMode) & (
+		static_cast<uint32_t>(InteractionActionMode::SelectVertex)
+		| static_cast<uint32_t>(InteractionActionMode::DeleteVertex)))
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
 		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
@@ -712,7 +740,9 @@ void kouek::MainApp::drawScene()
 				glPointSize(GLPathRenderer::endVertSize);
 			intrctPoint.model->draw();
 		}
-		else if (states->game.intrctActMode == InteractionActionMode::SelectVertex
+		else if (static_cast<uint32_t>(states->game.intrctActMode) & (
+			static_cast<uint32_t>(InteractionActionMode::SelectVertex)
+			| static_cast<uint32_t>(InteractionActionMode::DeleteVertex))
 			&& states->game.intrctParam.mode ==
 			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall
 			&& eyeIdx == vr::Eye_Left)

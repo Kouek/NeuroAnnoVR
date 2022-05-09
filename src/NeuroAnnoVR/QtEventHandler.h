@@ -23,8 +23,6 @@ namespace kouek
 	{
 		EditorWindow* glCtxProvider;
 		AppStates* states;
-
-		QGraphicsEllipseItem* ellipse;
 		
 		std::array<QWidget*, 2> wdgt2;
 		std::array<QGraphicsScene*, 2> scn2;
@@ -48,6 +46,8 @@ namespace kouek
 	class QtEventHandler : public EventHandler
 	{
 	private:
+		bool isTFChanged = false;
+		bool lastLeftHandUIShown = false;
 		std::array<float, 3> moveSteps = { 0 };
 		std::array<float, 3> subrgnMoveSteps = { 0 };
 
@@ -61,6 +61,10 @@ namespace kouek
 		inline GLuint getHandUITex(uint8_t handIdx) const
 		{
 			return handUI.FBO2[handIdx]->texture();
+		}
+		inline auto getHandUISize(uint8_t hndIdx) const
+		{
+			return handUI.wdgt2[hndIdx]->size();
 		}
 	};
 }

@@ -34,11 +34,10 @@ namespace kouek
 
 	enum class InteractionActionMode : uint32_t
 	{
-		SelectVertex = 0x0,
-		AddPath = 0x1,
-		AddVertex = 0x2,
-		DeleteVertex = 0x4,
-		SplitSubpath = 0x8,
+		SelectVertex = 0x1,
+		AddPath = 0x2,
+		AddVertex = 0x4,
+		DeleteVertex = 0x8,
 		JoinPath = 0xC
 	};
 
@@ -102,6 +101,7 @@ namespace kouek
 		glm::mat4 gizmoTransform;
 
 		DualEyeCamera camera;
+		vs::TransferFunc tf;
 		CompVolumeRenderer::Subregion subrgn;
 		Hand hand2[2];
 		Game game;

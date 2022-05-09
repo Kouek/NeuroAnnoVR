@@ -6,12 +6,13 @@ aux_source_directory("./GUI" GUI_SRCS)
 add_executable(
 	${TARGET_NAME}
 	${SRCS} ${GUI_SRCS}
+	"${THIRDPARTY_DIR}/glad/src/glad.c"
 	# Necessary! Or it won't be MOC
 	"./GUI/EditorWindow.ui"
 	"./GUI/LeftHandUI.ui"
 	"./GUI/RightHandUI.ui"
-	"${THIRDPARTY_DIR}/glad/src/glad.c"
- "MainApp.h")
+	"${INCLUDE_DIR}/util/QTransferFunction.h"
+)
 target_include_directories(
 	${TARGET_NAME}
 	PRIVATE
