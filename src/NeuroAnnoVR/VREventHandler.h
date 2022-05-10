@@ -51,7 +51,6 @@ namespace kouek
             const vr::InputAnalogActionData_t& actionDat);
         void onRightHandTriggerPressed(
             const vr::InputAnalogActionData_t& actionDat);
-        void onSubregionChanged();
 	};
 }
 

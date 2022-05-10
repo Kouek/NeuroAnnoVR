@@ -75,6 +75,7 @@ namespace kouek
 		void setTransferFunc(const vs::TransferFunc& tf) override;
 		void setLightParam(const LightParamter& lightParam) override;
 		void setVolume(std::shared_ptr<vs::CompVolume> volume) override;
+		void setSpacesScale(float scale) override;
 	};
 }
 

@@ -65,6 +65,15 @@ void kouek::CompVolumeRendererImpl::setVolume(
 	}
 
 	{
+		auto& texObj = blockCache->GetCUDATextureObjects();
+		cudaFunc->uploadCUDATextureObj(
+			texObj.data(), texObj.size());
+	}
+}
+
+void kouek::CompVolumeRendererImpl::setSpacesScale(float scale)
+{
+	{
 		auto& blockLength = this->volume->GetBlockLength();
 		compVolumeParam.blockLength = blockLength[0];
 		compVolumeParam.padding = blockLength[1];
@@ -73,20 +82,14 @@ void kouek::CompVolumeRendererImpl::setVolume(
 		compVolumeParam.LOD0BlockDim = glm::uvec3{
 			LOD0BlockDim[0], LOD0BlockDim[1], LOD0BlockDim[2] };
 		compVolumeParam.spaces = glm::vec3{
-		volume->GetVolumeSpaceX(),
-		volume->GetVolumeSpaceY(),
-		volume->GetVolumeSpaceZ() };
+		volume->GetVolumeSpaceX() * scale,
+		volume->GetVolumeSpaceY() * scale,
+		volume->GetVolumeSpaceZ() * scale };
 
 		cudaFunc->uploadCompVolumeParam(compVolumeParam);
 	}
 
-	{
-		auto& texObj = blockCache->GetCUDATextureObjects();
-		cudaFunc->uploadCUDATextureObj(
-			texObj.data(), texObj.size());
-	}
-
-	blockAABBs.clear(); // avoid conflict caused by Volume reset
+	blockAABBs.clear(); // avoid conflict caused by reset
 	for (uint32_t z = 0; z < compVolumeParam.LOD0BlockDim.z; ++z)
 		for (uint32_t y = 0; y < compVolumeParam.LOD0BlockDim.y; ++y)
 			for (uint32_t x = 0; x < compVolumeParam.LOD0BlockDim.x; ++x)

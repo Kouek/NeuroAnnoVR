@@ -74,6 +74,11 @@ namespace kouek
 
 		struct
 		{
+			std::unique_ptr<WireFrame> model;
+		}intrctLine;
+
+		struct
+		{
 			GLuint VAO, VBO, EBO;
 		}screenQuad, handUIQuad[2];
 

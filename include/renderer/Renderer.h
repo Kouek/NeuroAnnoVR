@@ -45,6 +45,7 @@ namespace kouek
 		virtual void setTransferFunc(const vs::TransferFunc& tf) = 0;
 		virtual void setLightParam(const LightParamter& lightParam) = 0;
 		virtual void setVolume(std::shared_ptr<vs::CompVolume> volume) = 0;
+		virtual void setSpacesScale(float scale) = 0;
 		virtual void render() = 0;
 	};
 

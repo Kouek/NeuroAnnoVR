@@ -37,7 +37,7 @@ namespace kouek
 
             this->vertCnt = vertCnt;
         }
-        void setSubData(const float* verts)
+        void setData(const GLfloat* verts)
         {
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GLfloat) * vertCnt * 6, verts);

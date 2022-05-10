@@ -165,6 +165,15 @@ static std::unique_ptr<WireFrame> createBall()
 	return std::make_unique<WireFrame>(verts);
 }
 
+static std::unique_ptr<WireFrame> createInteractionLine()
+{
+	std::vector<GLfloat> verts = {
+		+0.f,+0.f,+0.0f, 1.f,1.f,1.f,
+		+0.f,+0.f,+0.0f, 1.f,1.f,1.f
+	};
+	return std::make_unique<WireFrame>(verts);
+}
+
 static void initVolumeRender(
 	VolumeRenderType& volumeRender,
 	const glm::vec3& bkGrndCol, std::shared_ptr<AppStates> states)
@@ -177,6 +186,7 @@ static void initVolumeRender(
 		param.texUnitDim = { 1024,1024,1024 };
 		volumeRender.renderer = CompVolumeFAVRRenderer::create(param);
 	}
+	glm::vec3 spaces;
 	try
 	{
 		kouek::VolumeConfig cfg(std::string(kouek::PROJECT_SOURCE_DIR)
@@ -184,24 +194,23 @@ static void initVolumeRender(
 		volumeRender.volume =
 			vs::CompVolume::Load(cfg.getResourcePath().c_str());
 		
-		const float scale = 5.f;
-		glm::vec3 spaces;
-		volumeRender.volume->SetSpaceX(spaces.x = cfg.getSpaceX() * scale);
-		volumeRender.volume->SetSpaceY(spaces.y = cfg.getSpaceY() * scale);
-		volumeRender.volume->SetSpaceZ(spaces.z = cfg.getSpaceZ() * scale);
-		states->scaleVxToWd = glm::scale(glm::identity<glm::mat4>(), spaces);
-		states->scaleWdToVx = glm::scale(glm::identity<glm::mat4>(), glm::vec3{
-			1.f / spaces.x, 1.f / spaces.y, 1.f / spaces.z });
+		volumeRender.volume->SetSpaceX(spaces.x = cfg.getSpaceX());
+		volumeRender.volume->SetSpaceY(spaces.y = cfg.getSpaceY());
+		volumeRender.volume->SetSpaceZ(spaces.z = cfg.getSpaceZ());
+		spaces *= states->spacesScale;
 
-		volumeRender.renderer->setStep(1024, cfg.getBaseSpace() * scale * .3f );
-		AppStates::subrgnMoveSensityFine = AppStates::moveSensity = std::max(
-			volumeRender.volume->GetVolumeSpaceX(),
-			volumeRender.volume->GetVolumeSpaceY());
+		volumeRender.renderer->setStep(1024, cfg.getBaseSpace() * states->spacesScale * .3f );
+		AppStates::subrgnMoveSensityFine = AppStates::moveSensity =
+			std::max(spaces.x, spaces.y);
 		AppStates::subrgnMoveSensity = AppStates::subrgnMoveSensityFine * 5.f;
 		
 		volumeRender.renderer->setVolume(volumeRender.volume);
+		volumeRender.renderer->setSpacesScale(states->spacesScale);
 		volumeRender.renderer->setTransferFunc(cfg.getTF());
+		
 		states->tf.points = cfg.getTF().points;
+		states->scaleVxToWd = glm::scale(glm::identity<glm::mat4>(), spaces);
+		states->scaleWdToVx = glm::scale(glm::identity<glm::mat4>(), 1.f / spaces);
 	}
 	catch (std::exception& e)
 	{
@@ -222,9 +231,9 @@ static void initVolumeRender(
 		const auto& blkLenInfo = volumeRender.volume->GetBlockLength();
 		volumeRender.noPadBlkLen = blkLenInfo[0] - blkLenInfo[1] * 2;
 		states->subrgn.center = { 22.0718937f, 36.6882820f, 32.2800331f };
-		states->subrgn.halfW = volumeRender.noPadBlkLen / 2 * volumeRender.volume->GetVolumeSpaceX();
-		states->subrgn.halfH = volumeRender.noPadBlkLen / 2 * volumeRender.volume->GetVolumeSpaceY();
-		states->subrgn.halfD = volumeRender.noPadBlkLen / 16 * volumeRender.volume->GetVolumeSpaceZ();
+		states->subrgn.halfW = volumeRender.noPadBlkLen / 2 * spaces.x;
+		states->subrgn.halfH = volumeRender.noPadBlkLen / 2 * spaces.y;
+		states->subrgn.halfD = volumeRender.noPadBlkLen / 16 * spaces.z;
 		states->subrgn.rotation = states->subrgn.fromWorldToSubrgn =
 			glm::identity<glm::mat4>();
 	}
@@ -296,6 +305,10 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	intrctPoint.model = std::make_unique<Point>();
 	intrctPoint.model->setColorData(GLPathRenderer::selectedVertColor);
 
+	intrctLine.model = createInteractionLine();
+	for (uint8_t i = 0; i < 2; ++i)
+		states->game.intrctLineDat2[i][1] = glm::vec3{ 1.f };
+
 	std::tie(screenQuad.VAO, screenQuad.VBO, screenQuad.EBO) = createPlane();
 	std::tie(handUIQuad[0].VAO, handUIQuad[0].VBO, handUIQuad[0].EBO) = createPlane();
 	std::tie(handUIQuad[1].VAO, handUIQuad[1].VBO, handUIQuad[1].EBO) = createPlane();
@@ -362,8 +375,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 			Math::inversePose(TRInvT);
 
 		volumeRender.renderer->setSubregion(states->subrgn);
-		if (states->canVRRun)
-			vrEvntHndler->onSubregionChanged();
+		states->onSubregionChanged();
 	}
 
 	Math::printGLMMat4(states->eyeToHMD2[vr::Eye_Left], "HMDToEye L");
@@ -581,6 +593,17 @@ void kouek::MainApp::drawScene()
 				{
 					pathRenderer->startPath(pathRenderer->getPathIDOf(vertID));
 					pathRenderer->startVertex(vertID);
+
+					if (states->game.intrctActMode == InteractionActionMode::JoinPath)
+					{
+						static uint8_t idx = 0;
+						++idx;
+						if (idx == 2) idx = 0;
+						states->game.intrctLineVertID2[idx] = vertID;
+						states->game.intrctLineDat2[idx][0] = ballPos;
+
+						intrctLine.model->setData((GLfloat*)&states->game.intrctLineDat2);
+					}
 				}
 			}
 		}
@@ -591,6 +614,7 @@ void kouek::MainApp::drawScene()
 			states->game.intrctParam.dat.laser.drc = -handZ;
 		}
 	}
+
 	VRContext::forEyesDo([&](uint8_t eyeIdx) {
 		gizmoMVP2[eyeIdx] = VP2[eyeIdx] * states->gizmoTransform;
 		ball.MVP2[eyeIdx] = VP2[eyeIdx] * ball.transform;
@@ -664,7 +688,8 @@ void kouek::MainApp::drawScene()
 		}
 		else if (static_cast<uint32_t>(states->game.intrctActMode) & (
 			static_cast<uint32_t>(InteractionActionMode::SelectVertex)
-			| static_cast<uint32_t>(InteractionActionMode::DeleteVertex))
+			| static_cast<uint32_t>(InteractionActionMode::DeleteVertex)
+			| static_cast<uint32_t>(InteractionActionMode::JoinPath))
 			&& states->game.intrctParam.mode ==
 			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall
 			&& eyeIdx == vr::Eye_Left)
@@ -674,6 +699,13 @@ void kouek::MainApp::drawScene()
 				shaders->zeroDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
 			glPointSize(GLPathRenderer::selectVertSize);
 			intrctPoint.model->draw();
+
+			if (states->game.intrctActMode == InteractionActionMode::JoinPath)
+			{
+				glUniformMatrix4fv(
+					shaders->zeroDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+				intrctLine.model->draw();
+			}
 		}
 
 		shaders->pathDepthShader.program.bind();
@@ -684,7 +716,8 @@ void kouek::MainApp::drawScene()
 
 	if (static_cast<uint32_t>(states->game.intrctActMode) & (
 		static_cast<uint32_t>(InteractionActionMode::SelectVertex)
-		| static_cast<uint32_t>(InteractionActionMode::DeleteVertex)))
+		| static_cast<uint32_t>(InteractionActionMode::DeleteVertex)
+		| static_cast<uint32_t>(InteractionActionMode::JoinPath)))
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, pathSelectFramebuffer.FBO);
 		glViewport(0, 0, states->HMDRenderSizePerEye[0], states->HMDRenderSizePerEye[1]);
@@ -742,7 +775,8 @@ void kouek::MainApp::drawScene()
 		}
 		else if (static_cast<uint32_t>(states->game.intrctActMode) & (
 			static_cast<uint32_t>(InteractionActionMode::SelectVertex)
-			| static_cast<uint32_t>(InteractionActionMode::DeleteVertex))
+			| static_cast<uint32_t>(InteractionActionMode::DeleteVertex)
+			| static_cast<uint32_t>(InteractionActionMode::JoinPath))
 			&& states->game.intrctParam.mode ==
 			CompVolumeFAVRRenderer::InteractionMode::AnnotationBall
 			&& eyeIdx == vr::Eye_Left)
@@ -751,6 +785,13 @@ void kouek::MainApp::drawScene()
 				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
 			glPointSize(GLPathRenderer::selectVertSize);
 			intrctPoint.model->draw();
+
+			if (states->game.intrctActMode == InteractionActionMode::JoinPath)
+			{
+				glUniformMatrix4fv(
+					shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+				intrctLine.model->draw();
+			}
 		}
 
 		VRContext::forHandsDo([&](uint8_t hndIdx) {
@@ -768,6 +809,23 @@ void kouek::MainApp::drawScene()
 		pathRenderer->draw(shaders->pathColorShader.colorPos);
 		});
 
+	if (states->spacesScaleChanged)
+	{
+		glm::vec3 spaces{ volumeRender.volume->GetVolumeSpaceX(),
+		volumeRender.volume->GetVolumeSpaceY(),volumeRender.volume->GetVolumeSpaceZ() };
+		spaces *= states->spacesScale;
+		volumeRender.renderer->setSpacesScale(states->spacesScale);
+
+		states->subrgn.center = states->subrgn.center * states->spacesScale / states->lastSpacesScale;
+		states->subrgn.halfW = volumeRender.noPadBlkLen / 2 * spaces.x;
+		states->subrgn.halfH = volumeRender.noPadBlkLen / 2 * spaces.y;
+		states->subrgn.halfD = volumeRender.noPadBlkLen / 16 * spaces.z;
+		volumeRender.renderer->setSubregion(states->subrgn);
+		states->onSubregionChanged();
+
+		states->spacesScaleChanged = false;
+		states->lastSpacesScale = states->spacesScale;
+	}
 	{
 		auto [right, forward, up, lftEyePos, rhtEyePos] =
 			states->camera.getRFUP2();

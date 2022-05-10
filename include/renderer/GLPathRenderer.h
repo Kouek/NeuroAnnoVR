@@ -67,10 +67,21 @@ namespace kouek
 			}
 			~SubPath()
 			{
-				glDeleteVertexArrays(1, &VAO);
+				if (VAO != 0)
+					glDeleteVertexArrays(1, &VAO);
 				VAO = 0;
-				glDeleteBuffers(1, &EBO);
+				if (EBO != 0)
+					glDeleteBuffers(1, &EBO);
 				EBO = 0;
+			}
+			SubPath(SubPath&& right) noexcept
+			{
+				needUpload = right.needUpload;
+				VAO = right.VAO;
+				EBO = right.EBO;
+				vertGPUCap = right.vertGPUCap;
+				verts = std::move(right.verts);
+				right.VAO = right.EBO = 0;
 			}
 			inline const auto& getVertexIDs() const
 			{
@@ -151,18 +162,11 @@ namespace kouek
 			{
 				return subPaths;
 			}
-			inline GLuint addSubPath(GLuint startVertID)
+			inline void addSubPath(GLuint subPathID, GLuint startVertID)
 			{
-				GLuint subPathID = recycledSubpathIDs.empty()
-					? subPaths.size() : [&]() -> GLuint {
-					GLuint ret = recycledSubpathIDs.front();
-					recycledSubpathIDs.pop();
-					return ret;
-				}();
 				subPaths.emplace(std::piecewise_construct,
 					std::forward_as_tuple(subPathID),
 					std::forward_as_tuple(startVertID));
-				return subPathID;
 			}
 		};
 		GLuint VBO = 0, VAO;
@@ -173,6 +177,7 @@ namespace kouek
 		std::vector<GLuint> pathIDOfVerts;
 		std::unordered_map<GLuint, Path> paths;
 		std::queue<GLuint> availableVertIDs;
+		std::queue<GLuint> availableSubPathIDs;
 		std::queue<GLuint> availablePathIDs;
 
 	public:
@@ -190,6 +195,8 @@ namespace kouek
 
 			for (GLuint id = 0; id < MAX_PATH_NUM; ++id)
 				availablePathIDs.emplace(id);
+			for (GLuint id = 0; id < MAX_VERT_NUM; ++id)
+				availableSubPathIDs.emplace(id);
 			for (GLuint id = 0; id < MAX_VERT_NUM; ++id)
 				availableVertIDs.emplace(id);
 			verts.resize(MAX_VERT_NUM);
@@ -271,9 +278,12 @@ namespace kouek
 		inline void deletePath(GLuint pathID)
 		{
 			std::unordered_set<GLuint> recycledVertIDs; // de-repeat
-			for (auto& [id, subPath] : paths.at(pathID).subPaths)
+			for (auto& [subPathID, subPath] : paths.at(pathID).subPaths)
+			{
 				for (GLuint vertID : subPath.verts)
 					recycledVertIDs.emplace(vertID);
+				availableSubPathIDs.emplace(subPathID);
+			}
 			for (GLuint vertID : recycledVertIDs)
 				availableVertIDs.emplace(vertID);
 			availablePathIDs.emplace(pathID);
@@ -285,26 +295,38 @@ namespace kouek
 			GLuint p1 = pathIDOfVerts[v1];
 			if (p0 == p1) return;
 			Path* inPath, * outPath;
-			GLuint outPathID;
+			GLuint inPathID, outPathID;
 			if (paths.at(p0).subPaths.size()
 				< paths.at(p1).subPaths.size())
 			{
 				inPath = &paths.at(p0);
 				outPath = &paths.at(p1);
+				inPathID = p0;
 				outPathID = p1;
 			}
 			else
 			{
 				inPath = &paths.at(p1);
 				outPath = &paths.at(p0);
+				inPathID = p1;
 				outPathID = p0;
 			}
-			// update vertex data
+			// update verts data
 			for (auto& [id, subPath] : inPath->subPaths)
 				for (GLuint vertID : subPath.verts)
 					pathIDOfVerts[vertID] = outPathID;
-			// transfer sub path
-			// TODO
+			// transfer old sub paths
+			for (auto& [subPathID, subPath] : inPath->subPaths)
+				outPath->subPaths.emplace(std::piecewise_construct,
+					std::forward_as_tuple(subPathID),
+					std::forward_as_tuple(std::move(subPath)));
+			deletePath(inPathID);
+			// append a sub path linking 2 paths
+			startPath(outPathID);
+			startVertex(v0);
+			GLuint subPathID = addSubPath();
+			outPath->subPaths.at(subPathID).addVertex(v1);
+			endPath();
 		}
 		inline void startPath(GLuint pathID)
 		{
@@ -318,12 +340,20 @@ namespace kouek
 		inline GLuint addSubPath()
 		{
 			Path& path = paths.at(selectedPathID);
+			GLuint subPathID = availableSubPathIDs.front();
+			availableSubPathIDs.pop();
 			glBindBuffer(GL_ARRAY_BUFFER, VBO);
-			GLuint subPathID = path.addSubPath(
+			path.addSubPath(
+				subPathID,
 				selectedVertID == std::numeric_limits<GLuint>::max()
 				? path.rootID : selectedVertID);
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 			return subPathID;
+		}
+		inline void deleteSubPath(GLuint subPathID)
+		{
+			paths.at(selectedPathID).subPaths.erase(subPathID);
+			availableSubPathIDs.emplace(subPathID);
 		}
 		inline void startSubPath(GLuint subPathID)
 		{
@@ -383,11 +413,13 @@ namespace kouek
 						++linkCnt;
 					}
 			if (linkCnt == 0 || linkCnt > 1)
-				return; // vertex doesnt' exist or is not an end vertex
+				return; // vert doesnt' exist or is not an end vert
 			tarSP->verts.pop_back();
-			if (tarSP->verts.size() == 0)
-				path.subPaths.erase(tarSPID);
 			availableVertIDs.push(vertID);
+			
+			// if sub path is empty, delete it
+			if (tarSP->verts.size() == 0)
+				deleteSubPath(tarSPID);
 		}
 		inline void startVertex(GLuint vertID)
 		{

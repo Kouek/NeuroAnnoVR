@@ -418,7 +418,7 @@ void kouek::VREventHandler::onLeftHandTriggerPulled(
             lastPos = states->hand2[VRContext::Hand_Left].transform[3];
             states->renderer->setSubregion(states->subrgn);
         }
-        onSubregionChanged();
+        states->onSubregionChanged();
         ++needShowGizmoCnt;
     }
     lastPressed = pressed;
@@ -459,7 +459,11 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
             }
         break;
     case InteractionActionMode::AddPath:
-        if (!pressed && lastPressed && isRhtTrigClicked)
+    {
+        static bool canAddPath = false;
+        if (isRhtTrigClicked)
+            canAddPath = true;
+        else if (!pressed && lastPressed && canAddPath)
         {
             auto pos = transformPos(states->game.intrctPos);
             auto pathID = states->pathRenderer->addPath(
@@ -467,7 +471,9 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
             states->pathRenderer->endPath();
             states->pathRenderer->startPath(pathID);
             lastPos = states->game.intrctPos;
+            canAddPath = false;
         }
+    }
         break;
 	case InteractionActionMode::AddVertex:
         if (pressed && !lastPressed)
@@ -488,7 +494,11 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
                 lastPos = states->game.intrctPos;
             }
             else
+            {
+                GLuint id = states->pathRenderer->getSelectedVertID();
                 states->pathRenderer->endSubPath();
+                states->pathRenderer->startVertex(id);
+            }
             pressed = false;
         }
         else if (pressed && isDistBigEnough(states->game.intrctPos))
@@ -508,32 +518,15 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
         if (pressed && isRhtTrigClicked)
             states->pathRenderer->deleteVertex(states->pathRenderer->getSelectedVertID());
         break;
+    case InteractionActionMode::JoinPath:
+        if (pressed && !lastPressed)
+            states->game.shouldSelectVertex = true;
+        if (pressed && isRhtTrigClicked)
+            states->pathRenderer->joinPath(states->game.intrctLineVertID2[0], states->game.intrctLineVertID2[1]);
+        break;
 	default:
 		break;
 	}
 
     lastPressed = pressed;
-}
-
-void kouek::VREventHandler::onSubregionChanged()
-{
-    glm::vec3 oriCntr = {
-        states->subrgn.halfW / states->scaleVxToWd[0][0],
-        states->subrgn.halfH / states->scaleVxToWd[1][1],
-        states->subrgn.halfD / states->scaleVxToWd[2][2] };
-    glm::vec3 cntr = {
-        states->subrgn.center.x / states->scaleVxToWd[0][0],
-        states->subrgn.center.y / states->scaleVxToWd[1][1],
-        states->subrgn.center.z / states->scaleVxToWd[2][2] };
-    states->fromVxToWdSp = glm::translate(glm::identity<glm::mat4>(),
-        oriCntr - cntr);
-    states->fromVxToWdSp = states->scaleVxToWd * states->fromVxToWdSp;
-
-    oriCntr = { states->subrgn.halfW,
-        states->subrgn.halfH, states->subrgn.halfD };
-    cntr = { states->subrgn.center.x,
-        states->subrgn.center.y, states->subrgn.center.z };
-    states->fromWdToVxSp = glm::translate(glm::identity<glm::mat4>(),
-        cntr - oriCntr);
-    states->fromWdToVxSp = states->scaleWdToVx * states->fromWdToVxSp;
 }

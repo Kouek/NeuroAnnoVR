@@ -19,12 +19,21 @@ kouek::LeftHandUI::LeftHandUI(QWidget* parent)
 		&QButtonGroup::buttonClicked), [&](int id) {
 			emit moveModeBtnsClicked(id);
 		});
+
 	connect(ui->verticalSliderMeshAlpha, &QSlider::valueChanged,
 		[&](int val) {
 			double alpha = (double)val / (double)ui->verticalSliderMeshAlpha->maximum();
 			ui->labelMeshAlpha->setText(QString("%1").arg(alpha, 0, 'f', 2));
 			emit meshAlphaSliderChanged(alpha);
 		});
+	connect(ui->verticalSliderSpacesScale, &QSlider::valueChanged,
+		[&](int val) {
+			double scale = 10.f * (double)val
+				/ (double)ui->verticalSliderSpacesScale->maximum();
+			ui->labelSpcesScale->setText(QString("%1").arg(scale, 0, 'f', 2));
+			emit spacesScaleChanged(scale);
+		});
+
 	connect(tfWdgt, &QTransferFunctionWidget::tfChanged,
 		this, &LeftHandUI::tfChanged);
 }

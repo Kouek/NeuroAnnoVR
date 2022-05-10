@@ -38,7 +38,7 @@ namespace kouek
 		AddPath = 0x2,
 		AddVertex = 0x4,
 		DeleteVertex = 0x8,
-		JoinPath = 0xC
+		JoinPath = 0x10
 	};
 
 	enum class LaserMouseMode : uint8_t
@@ -55,6 +55,8 @@ namespace kouek
 		MoveMode moveMode = MoveMode::Wander;
 		InteractionActionMode intrctActMode = InteractionActionMode::SelectVertex;
 		glm::vec3 intrctPos;
+		std::array<GLuint, 2> intrctLineVertID2;
+		std::array<std::array<glm::vec3, 2>, 2> intrctLineDat2;
 		CompVolumeFAVRRenderer::InteractionParameter intrctParam;
 
 		Game() {
@@ -82,6 +84,7 @@ namespace kouek
 		bool canRun = true, canVRRun = true;
 		std::array<bool, 2> showHandUI2 = { false };
 		bool showGizmo = false;
+		bool spacesScaleChanged = false;
 		float nearClip = 0.01f, farClip = 10.f;
 		CompVolumeFAVRRenderer::RenderTarget renderTar = CompVolumeFAVRRenderer::RenderTarget::Image;
 
@@ -95,10 +98,14 @@ namespace kouek
 		glm::mat4 fromWdToVxSp, fromVxToWdSp;
 
 		float meshAlpha = .5f;
+		float spacesScale = 5.f, lastSpacesScale = 5.f;
 		glm::vec2 laserMouseNormPos;
 		glm::vec3 cameraMountPos;
 		glm::mat4 handUITransform;
 		glm::mat4 gizmoTransform;
+
+		CompVolumeFAVRRenderer* renderer = nullptr;
+		GLPathRenderer* pathRenderer = nullptr;
 
 		DualEyeCamera camera;
 		vs::TransferFunc tf;
@@ -106,9 +113,6 @@ namespace kouek
 		Hand hand2[2];
 		Game game;
 		LaserMouseMessageQue laserMouseMsgQue;
-
-		CompVolumeFAVRRenderer* renderer = nullptr;
-		GLPathRenderer* pathRenderer = nullptr;
 
 		AppStates()
 		{
@@ -134,6 +138,28 @@ namespace kouek
 					-eyeToHMD2[vr::Eye_Right][3][2] };
 				camera.setEyeToHead(lftToHead, rhtToHead);
 			}
+		}
+		void onSubregionChanged()
+		{
+			glm::vec3 oriCntr = {
+				subrgn.halfW / scaleVxToWd[0][0],
+				subrgn.halfH / scaleVxToWd[1][1],
+				subrgn.halfD / scaleVxToWd[2][2] };
+			glm::vec3 cntr = {
+				subrgn.center.x / scaleVxToWd[0][0],
+				subrgn.center.y / scaleVxToWd[1][1],
+				subrgn.center.z / scaleVxToWd[2][2] };
+			fromVxToWdSp = glm::translate(glm::identity<glm::mat4>(),
+				oriCntr - cntr);
+			fromVxToWdSp = scaleVxToWd * fromVxToWdSp;
+
+			oriCntr = { subrgn.halfW,
+				subrgn.halfH, subrgn.halfD };
+			cntr = { subrgn.center.x,
+				subrgn.center.y, subrgn.center.z };
+			fromWdToVxSp = glm::translate(glm::identity<glm::mat4>(),
+				cntr - oriCntr);
+			fromWdToVxSp = scaleWdToVx * fromWdToVxSp;
 		}
 	};
 
