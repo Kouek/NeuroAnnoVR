@@ -28,7 +28,7 @@ kouek::LeftHandUI::LeftHandUI(QWidget* parent)
 		});
 	connect(ui->verticalSliderSpacesScale, &QSlider::valueChanged,
 		[&](int val) {
-			double scale = 10.f * (double)val
+			double scale = 20.f * (double)val
 				/ (double)ui->verticalSliderSpacesScale->maximum();
 			ui->labelSpcesScale->setText(QString("%1").arg(scale, 0, 'f', 2));
 			emit spacesScaleChanged(scale);

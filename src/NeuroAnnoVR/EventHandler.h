@@ -141,6 +141,22 @@ namespace kouek
 		}
 		void onSubregionChanged()
 		{
+			gizmoTransform = glm::scale(glm::identity<glm::mat4>(),
+				glm::vec3(subrgn.halfW * 2,
+					subrgn.halfH * 2,
+					subrgn.halfD * 2));
+			auto invTranslation = glm::translate(glm::identity<glm::mat4>(),
+				glm::vec3(-subrgn.halfW,
+					-subrgn.halfH,
+					-subrgn.halfD));
+			auto translation = glm::translate(glm::identity<glm::mat4>(),
+				glm::vec3(subrgn.halfW,
+					subrgn.halfH,
+					subrgn.halfD));
+			auto TRInvT = translation * subrgn.rotation
+				* invTranslation;
+			gizmoTransform = TRInvT * gizmoTransform;
+
 			glm::vec3 oriCntr = {
 				subrgn.halfW / scaleVxToWd[0][0],
 				subrgn.halfH / scaleVxToWd[1][1],
@@ -153,10 +169,8 @@ namespace kouek
 				oriCntr - cntr);
 			fromVxToWdSp = scaleVxToWd * fromVxToWdSp;
 
-			oriCntr = { subrgn.halfW,
-				subrgn.halfH, subrgn.halfD };
-			cntr = { subrgn.center.x,
-				subrgn.center.y, subrgn.center.z };
+			oriCntr = { subrgn.halfW, subrgn.halfH, subrgn.halfD };
+			cntr = { subrgn.center.x, subrgn.center.y, subrgn.center.z };
 			fromWdToVxSp = glm::translate(glm::identity<glm::mat4>(),
 				cntr - oriCntr);
 			fromWdToVxSp = scaleWdToVx * fromWdToVxSp;

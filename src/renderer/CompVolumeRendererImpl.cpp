@@ -69,10 +69,7 @@ void kouek::CompVolumeRendererImpl::setVolume(
 		cudaFunc->uploadCUDATextureObj(
 			texObj.data(), texObj.size());
 	}
-}
 
-void kouek::CompVolumeRendererImpl::setSpacesScale(float scale)
-{
 	{
 		auto& blockLength = this->volume->GetBlockLength();
 		compVolumeParam.blockLength = blockLength[0];
@@ -82,9 +79,9 @@ void kouek::CompVolumeRendererImpl::setSpacesScale(float scale)
 		compVolumeParam.LOD0BlockDim = glm::uvec3{
 			LOD0BlockDim[0], LOD0BlockDim[1], LOD0BlockDim[2] };
 		compVolumeParam.spaces = glm::vec3{
-		volume->GetVolumeSpaceX() * scale,
-		volume->GetVolumeSpaceY() * scale,
-		volume->GetVolumeSpaceZ() * scale };
+		volume->GetVolumeSpaceX(),
+		volume->GetVolumeSpaceY(),
+		volume->GetVolumeSpaceZ() };
 
 		cudaFunc->uploadCompVolumeParam(compVolumeParam);
 	}
@@ -111,4 +108,40 @@ void kouek::CompVolumeRendererImpl::setSpacesScale(float scale)
 						std::array<uint32_t, 4>()
 					)
 				);
+}
+
+void kouek::CompVolumeRendererImpl::setSpacesScale(float scale)
+{
+	{
+		auto& blockLength = this->volume->GetBlockLength();
+		compVolumeParam.blockLength = blockLength[0];
+		compVolumeParam.padding = blockLength[1];
+		compVolumeParam.noPaddingBlockLength = blockLength[0] - 2 * blockLength[1];
+		auto& LOD0BlockDim = this->volume->GetBlockDim(0);
+		compVolumeParam.LOD0BlockDim = glm::uvec3{
+			LOD0BlockDim[0], LOD0BlockDim[1], LOD0BlockDim[2] };
+		compVolumeParam.spaces = glm::vec3{
+		volume->GetVolumeSpaceX() * scale,
+		volume->GetVolumeSpaceY() * scale,
+		volume->GetVolumeSpaceZ() * scale };
+
+		cudaFunc->uploadCompVolumeParam(compVolumeParam);
+	}
+
+	glm::vec3 mltpl{
+		compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.x,
+		compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.y,
+		compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.z };
+	for (uint32_t z = 0; z < compVolumeParam.LOD0BlockDim.z; ++z)
+		for (uint32_t y = 0; y < compVolumeParam.LOD0BlockDim.y; ++y)
+			for (uint32_t x = 0; x < compVolumeParam.LOD0BlockDim.x; ++x)
+			{
+				auto& aabb = blockAABBs.at(std::array{ x, y, z });
+				aabb.min_p = glm::vec3{
+					x * mltpl.x, y * mltpl.y, z * mltpl.z };
+				aabb.max_p = glm::vec3{
+					(x + 1) * mltpl.x,
+					(y + 1) * mltpl.y,
+					(z + 1) * mltpl.z };
+			}
 }

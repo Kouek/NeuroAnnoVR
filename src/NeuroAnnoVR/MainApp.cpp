@@ -273,6 +273,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	
 	initVolumeRender(volumeRender, bkGrndCol, states);
 	states->renderer = volumeRender.renderer.get();
+	states->onSubregionChanged();
 
 	pathRenderer = std::make_unique<GLPathRenderer>();
 	GLPathRenderer::rootVertSize = 20.f;
@@ -817,9 +818,6 @@ void kouek::MainApp::drawScene()
 		volumeRender.renderer->setSpacesScale(states->spacesScale);
 
 		states->subrgn.center = states->subrgn.center * states->spacesScale / states->lastSpacesScale;
-		states->subrgn.halfW = volumeRender.noPadBlkLen / 2 * spaces.x;
-		states->subrgn.halfH = volumeRender.noPadBlkLen / 2 * spaces.y;
-		states->subrgn.halfD = volumeRender.noPadBlkLen / 16 * spaces.z;
 		volumeRender.renderer->setSubregion(states->subrgn);
 		states->onSubregionChanged();
 

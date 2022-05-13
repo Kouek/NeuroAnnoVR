@@ -339,6 +339,8 @@ namespace kouek
 		}
 		inline GLuint addSubPath()
 		{
+			if (selectedPathID == std::numeric_limits<GLuint>::max())
+				return std::numeric_limits<GLuint>::max();
 			Path& path = paths.at(selectedPathID);
 			GLuint subPathID = availableSubPathIDs.front();
 			availableSubPathIDs.pop();
@@ -366,6 +368,9 @@ namespace kouek
 		}
 		inline GLuint addVertex(const glm::vec3& pos)
 		{
+			if (selectedPathID == std::numeric_limits<GLuint>::max()
+				|| selectedSubPathID == std::numeric_limits<GLuint>::max())
+				return std::numeric_limits<GLuint>::max();
 			GLuint vertID = availableVertIDs.front();
 			availableVertIDs.pop();
 			
