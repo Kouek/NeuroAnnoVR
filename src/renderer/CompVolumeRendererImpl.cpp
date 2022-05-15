@@ -95,14 +95,14 @@ void kouek::CompVolumeRendererImpl::setVolume(
 					std::forward_as_tuple(std::array{ x, y, z }),
 					std::forward_as_tuple(
 						glm::vec3{
-							x * compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.x,
-							y * compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.y,
-							z * compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.z
+							x * compVolumeParam.noPaddingBlockLength,
+							y * compVolumeParam.noPaddingBlockLength,
+							z * compVolumeParam.noPaddingBlockLength
 						},
 						glm::vec3{
-							(x + 1) * compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.x,
-							(y + 1) * compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.y,
-							(z + 1) * compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.z
+							(x + 1) * compVolumeParam.noPaddingBlockLength,
+							(y + 1) * compVolumeParam.noPaddingBlockLength,
+							(z + 1) * compVolumeParam.noPaddingBlockLength
 						},
 						// dummy in this program
 						std::array<uint32_t, 4>()
@@ -127,21 +127,4 @@ void kouek::CompVolumeRendererImpl::setSpacesScale(float scale)
 
 		cudaFunc->uploadCompVolumeParam(compVolumeParam);
 	}
-
-	glm::vec3 mltpl{
-		compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.x,
-		compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.y,
-		compVolumeParam.noPaddingBlockLength * compVolumeParam.spaces.z };
-	for (uint32_t z = 0; z < compVolumeParam.LOD0BlockDim.z; ++z)
-		for (uint32_t y = 0; y < compVolumeParam.LOD0BlockDim.y; ++y)
-			for (uint32_t x = 0; x < compVolumeParam.LOD0BlockDim.x; ++x)
-			{
-				auto& aabb = blockAABBs.at(std::array{ x, y, z });
-				aabb.min_p = glm::vec3{
-					x * mltpl.x, y * mltpl.y, z * mltpl.z };
-				aabb.max_p = glm::vec3{
-					(x + 1) * mltpl.x,
-					(y + 1) * mltpl.y,
-					(z + 1) * mltpl.z };
-			}
 }

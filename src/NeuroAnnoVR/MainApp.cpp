@@ -711,7 +711,7 @@ void kouek::MainApp::drawScene()
 
 		shaders->pathDepthShader.program.bind();
 		glUniformMatrix4fv(
-			shaders->pathDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
+			shaders->pathDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&pathMVP2[eyeIdx]);
 		pathRenderer->draw();
 		});
 
@@ -815,6 +815,8 @@ void kouek::MainApp::drawScene()
 		glm::vec3 spaces{ volumeRender.volume->GetVolumeSpaceX(),
 		volumeRender.volume->GetVolumeSpaceY(),volumeRender.volume->GetVolumeSpaceZ() };
 		spaces *= states->spacesScale;
+		states->scaleVxToWd = glm::scale(glm::identity<glm::mat4>(), spaces);
+		states->scaleWdToVx = glm::scale(glm::identity<glm::mat4>(), 1.f / spaces);
 		volumeRender.renderer->setSpacesScale(states->spacesScale);
 
 		states->subrgn.center = states->subrgn.center * states->spacesScale / states->lastSpacesScale;

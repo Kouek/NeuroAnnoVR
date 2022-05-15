@@ -259,6 +259,14 @@ kouek::QtEventHandler::QtEventHandler(
 				states->showHandUI2[VRContext::Hand_Left] = false;
 				computeUITransform(states.get());
 				break;
+			case Qt::Key_PageUp:
+				states->spacesScale += 1.f;
+				states->spacesScaleChanged = true;
+				break;
+			case Qt::Key_PageDown:
+				states->spacesScale -= 1.f;
+				states->spacesScaleChanged = true;
+				break;
 			}
 		});
 	// LeftHandUI
@@ -374,6 +382,7 @@ void kouek::QtEventHandler::update()
 	{
 		states->subrgn.center += glm::vec3(subrgnMoveSteps[0],
 			subrgnMoveSteps[1], subrgnMoveSteps[2]);
+		states->onSubregionChanged();
 		states->renderer->setSubregion(states->subrgn);
 		subrgnMoveSteps = { 0 };
 	}

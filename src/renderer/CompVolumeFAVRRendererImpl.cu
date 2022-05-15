@@ -481,9 +481,9 @@ __global__ void findInteractionPosInXYZKernel(PosWithScalar* d_intrctPossInXY)
 	float maxScalar = 0;
 	glm::vec3 samplePos, intrctPos;
 	glm::vec3 subrgnCenterInWdSp = {
-		.5f * dc_renderParam.subrgn.halfW,
-		.5f * dc_renderParam.subrgn.halfH,
-		.5f * dc_renderParam.subrgn.halfD,
+		dc_renderParam.subrgn.halfW,
+		dc_renderParam.subrgn.halfH,
+		dc_renderParam.subrgn.halfD,
 	};
 	glm::vec3 step3 = dc_renderParam.intrctParam.dat.ball.AABBSize
 		/ (float)INTERACTION_SAMPLE_DIM;
@@ -919,9 +919,9 @@ __global__ void subsampleKernel(
 	if (isThreadForFindIntrctPos) *d_intrctPos = rayPos;
 
 	glm::vec3 subrgnCenterInWdSp = {
-		.5f * dc_renderParam.subrgn.halfW,
-		.5f * dc_renderParam.subrgn.halfH,
-		.5f * dc_renderParam.subrgn.halfD,
+		dc_renderParam.subrgn.halfW,
+		dc_renderParam.subrgn.halfH,
+		dc_renderParam.subrgn.halfD,
 	};
 	glm::vec3 rayDrcMulStp = rayDrc * dc_renderParam.step;
 	glm::vec3 samplePos;

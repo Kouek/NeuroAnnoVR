@@ -158,22 +158,20 @@ namespace kouek
 			gizmoTransform = TRInvT * gizmoTransform;
 
 			glm::vec3 oriCntr = {
-				subrgn.halfW / scaleVxToWd[0][0],
-				subrgn.halfH / scaleVxToWd[1][1],
-				subrgn.halfD / scaleVxToWd[2][2] };
-			glm::vec3 cntr = {
-				subrgn.center.x / scaleVxToWd[0][0],
-				subrgn.center.y / scaleVxToWd[1][1],
-				subrgn.center.z / scaleVxToWd[2][2] };
-			fromVxToWdSp = glm::translate(glm::identity<glm::mat4>(),
-				oriCntr - cntr);
-			fromVxToWdSp = scaleVxToWd * fromVxToWdSp;
+				-subrgn.center.x * scaleWdToVx[0][0],
+				-subrgn.center.y * scaleWdToVx[1][1],
+				-subrgn.center.z * scaleWdToVx[2][2] };
+			invTranslation = glm::translate(
+				glm::identity<glm::mat4>(), oriCntr);
+			fromVxToWdSp = translation * scaleVxToWd * invTranslation;
 
-			oriCntr = { subrgn.halfW, subrgn.halfH, subrgn.halfD };
-			cntr = { subrgn.center.x, subrgn.center.y, subrgn.center.z };
-			fromWdToVxSp = glm::translate(glm::identity<glm::mat4>(),
-				cntr - oriCntr);
-			fromWdToVxSp = scaleWdToVx * fromWdToVxSp;
+			invTranslation[3][0] *= -1.f;
+			invTranslation[3][1] *= -1.f;
+			invTranslation[3][2] *= -1.f;
+			translation[3][0] *= -1.f;
+			translation[3][1] *= -1.f;
+			translation[3][2] *= -1.f;
+			fromWdToVxSp = invTranslation * scaleWdToVx * translation;
 		}
 	};
 

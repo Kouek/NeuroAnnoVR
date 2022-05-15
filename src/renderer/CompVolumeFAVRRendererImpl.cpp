@@ -83,10 +83,12 @@ void kouek::CompVolumeFAVRRendererImpl::render(
 		// according to Subregion, find blocks needed
 		{
 			vs::OBB subrgnOBB(
-				renderParam->subrgn.center, renderParam->subrgn.rotation[0],
+				renderParam->subrgn.center / compVolumeParam.spaces,
+				renderParam->subrgn.rotation[0],
 				renderParam->subrgn.rotation[1], renderParam->subrgn.rotation[2],
-				renderParam->subrgn.halfW, renderParam->subrgn.halfH,
-				renderParam->subrgn.halfD);
+				renderParam->subrgn.halfW / compVolumeParam.spaces.x,
+				renderParam->subrgn.halfH / compVolumeParam.spaces.y,
+				renderParam->subrgn.halfD / compVolumeParam.spaces.z);
 			// AABB filter first
 			vs::AABB subrgnAABB = subrgnOBB.getAABB();
 			for (auto& blockAABB : blockAABBs)
