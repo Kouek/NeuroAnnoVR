@@ -165,15 +165,6 @@ static std::unique_ptr<WireFrame> createBall()
 	return std::make_unique<WireFrame>(verts);
 }
 
-static std::unique_ptr<WireFrame> createInteractionLine()
-{
-	std::vector<GLfloat> verts = {
-		+0.f,+0.f,+0.0f, 1.f,1.f,1.f,
-		+0.f,+0.f,+0.0f, 1.f,1.f,1.f
-	};
-	return std::make_unique<WireFrame>(verts);
-}
-
 static void initVolumeRender(
 	VolumeRenderType& volumeRender,
 	const glm::vec3& bkGrndCol, std::shared_ptr<AppStates> states)
@@ -230,7 +221,7 @@ static void initVolumeRender(
 	{
 		const auto& blkLenInfo = volumeRender.volume->GetBlockLength();
 		volumeRender.noPadBlkLen = blkLenInfo[0] - blkLenInfo[1] * 2;
-		states->subrgn.center = { 22.0718937f, 36.6882820f, 32.2800331f };
+		states->subrgn.center = { 22.2718792f, 36.91226598f, 32.1920395f };
 		states->subrgn.halfW = volumeRender.noPadBlkLen / 2 * spaces.x;
 		states->subrgn.halfH = volumeRender.noPadBlkLen / 2 * spaces.y;
 		states->subrgn.halfD = volumeRender.noPadBlkLen / 16 * spaces.z;
@@ -279,6 +270,7 @@ kouek::MainApp::MainApp(int argc, char** argv)
 	GLPathRenderer::rootVertSize = 20.f;
 	GLPathRenderer::endVertSize = 5.f;
 	GLPathRenderer::selectedVertSize = 8.f;
+	GLPathRenderer::secondSelectedVertSize = 4.f;
 	GLPathRenderer::selectVertSize = 3.f;
 	GLPathRenderer::lineWidth = 2.f;
 	states->pathRenderer = pathRenderer.get();
@@ -305,10 +297,6 @@ kouek::MainApp::MainApp(int argc, char** argv)
 
 	intrctPoint.model = std::make_unique<Point>();
 	intrctPoint.model->setColorData(GLPathRenderer::selectedVertColor);
-
-	intrctLine.model = createInteractionLine();
-	for (uint8_t i = 0; i < 2; ++i)
-		states->game.intrctLineDat2[i][1] = glm::vec3{ 1.f };
 
 	std::tie(screenQuad.VAO, screenQuad.VBO, screenQuad.EBO) = createPlane();
 	std::tie(handUIQuad[0].VAO, handUIQuad[0].VBO, handUIQuad[0].EBO) = createPlane();
@@ -593,18 +581,17 @@ void kouek::MainApp::drawScene()
 				if (vertID != std::numeric_limits<GLuint>::max())
 				{
 					pathRenderer->startPath(pathRenderer->getPathIDOf(vertID));
-					pathRenderer->startVertex(vertID);
-
 					if (states->game.intrctActMode == InteractionActionMode::JoinPath)
 					{
-						static uint8_t idx = 0;
-						++idx;
-						if (idx == 2) idx = 0;
-						states->game.intrctLineVertID2[idx] = vertID;
-						states->game.intrctLineDat2[idx][0] = ballPos;
-
-						intrctLine.model->setData((GLfloat*)&states->game.intrctLineDat2);
+						static uint8_t t = 0;
+						if (t == 0)
+							pathRenderer->startVertex(vertID);
+						else
+							pathRenderer->startSecondVertex(vertID);
+						t = (t + 1) & 0x1;
 					}
+					else
+						pathRenderer->startVertex(vertID);
 				}
 			}
 		}
@@ -700,13 +687,6 @@ void kouek::MainApp::drawScene()
 				shaders->zeroDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
 			glPointSize(GLPathRenderer::selectVertSize);
 			intrctPoint.model->draw();
-
-			if (states->game.intrctActMode == InteractionActionMode::JoinPath)
-			{
-				glUniformMatrix4fv(
-					shaders->zeroDepthShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
-				intrctLine.model->draw();
-			}
 		}
 
 		shaders->pathDepthShader.program.bind();
@@ -786,13 +766,6 @@ void kouek::MainApp::drawScene()
 				shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&identity);
 			glPointSize(GLPathRenderer::selectVertSize);
 			intrctPoint.model->draw();
-
-			if (states->game.intrctActMode == InteractionActionMode::JoinPath)
-			{
-				glUniformMatrix4fv(
-					shaders->colorShader.matPos, 1, GL_FALSE, (GLfloat*)&VP2[eyeIdx]);
-				intrctLine.model->draw();
-			}
 		}
 
 		VRContext::forHandsDo([&](uint8_t hndIdx) {

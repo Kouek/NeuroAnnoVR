@@ -147,8 +147,25 @@ namespace kouek
 						for (const auto& [id, swcPair] : swcTreeLinks)
 							if (tree.find(id) != tree.end())
 								return std::tuple{ id, swcPair.first, swcPair.second };
+						GLuint id = std::numeric_limits<GLuint>::max();
+						SWCIDTy parSWCID = std::numeric_limits<SWCIDTy>::max();
+						for (auto& [posblID, links] : tree)
+						{
+							for (GLuint linked : links)
+								if (auto itr = swcTreeLinks.find(linked); itr != swcTreeLinks.end())
+								{
+									id = posblID;
+									parSWCID = itr->second.first;
+									links.erase(linked);
+									break;
+								}
+						}
+						assert(parSWCID != std::numeric_limits<SWCIDTy>::max());
+						swcTreeLinks[id].first = guid++;
+						swcTreeLinks[id].second = parSWCID;
+						return std::tuple{ id, swcTreeLinks[id].first, swcTreeLinks[id].second };
 					}();
-					auto& links = tree[id];
+					auto& links = tree.at(id);
 					for (GLuint linked : links)
 					{
 						swcTreeLinks[linked].first = guid++;

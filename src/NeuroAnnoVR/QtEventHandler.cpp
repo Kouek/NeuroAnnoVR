@@ -291,11 +291,6 @@ kouek::QtEventHandler::QtEventHandler(
 			states->meshAlpha = alpha;
 		});
 	QObject::connect(static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
-		&LeftHandUI::spacesScaleChanged, [&](float scale) {
-			states->spacesScale = scale;
-			states->spacesScaleChanged = true;
-		});
-	QObject::connect(static_cast<LeftHandUI*>(handUI.wdgt2[VRContext::Hand_Left]),
 		&LeftHandUI::tfChanged, [&]() {
 			isTFChanged = true;
 		});

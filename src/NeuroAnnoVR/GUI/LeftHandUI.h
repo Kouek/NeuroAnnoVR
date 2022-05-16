@@ -40,7 +40,6 @@ namespace kouek
 	signals:
 		void moveModeBtnsClicked(int id);
 		void meshAlphaSliderChanged(float alpha);
-		void spacesScaleChanged(float scale);
 		void tfChanged();
 	};
 }

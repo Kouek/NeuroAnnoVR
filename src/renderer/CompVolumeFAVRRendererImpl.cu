@@ -731,9 +731,9 @@ __global__ void renderKernel(
 #endif // TEST_RAY_EXIT_POSITION
 
 	glm::vec3 subrgnCenterInWdSp = {
-		.5f * dc_renderParam.subrgn.halfW,
-		.5f * dc_renderParam.subrgn.halfH,
-		.5f * dc_renderParam.subrgn.halfD,
+		dc_renderParam.subrgn.halfW,
+		dc_renderParam.subrgn.halfH,
+		dc_renderParam.subrgn.halfD,
 	};
 	glm::vec3 rayDrcMulStp = rayDrc * dc_renderParam.step;
 	glm::vec3 samplePos;

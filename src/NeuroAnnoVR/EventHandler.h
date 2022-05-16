@@ -55,8 +55,6 @@ namespace kouek
 		MoveMode moveMode = MoveMode::Wander;
 		InteractionActionMode intrctActMode = InteractionActionMode::SelectVertex;
 		glm::vec3 intrctPos;
-		std::array<GLuint, 2> intrctLineVertID2;
-		std::array<std::array<glm::vec3, 2>, 2> intrctLineDat2;
 		CompVolumeFAVRRenderer::InteractionParameter intrctParam;
 
 		Game() {
@@ -79,6 +77,7 @@ namespace kouek
 		static inline float subrgnMoveSensity = .002f;
 		static inline float subrgnMoveSensityFine = .001f;
 		static inline float minDistSqrBtwnVerts = .004f;
+		static inline float spaceScaleSensity = 0.01f;
 		static inline glm::vec3 UITranslateToHead = glm::vec3{ 0,0,-2.f };
 
 		bool canRun = true, canVRRun = true;

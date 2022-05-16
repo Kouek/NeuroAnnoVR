@@ -24,6 +24,7 @@ namespace kouek
 		inline static float lineWidth = 1.f;
 		inline static float selectVertSize = 5.f;
 		inline static float selectedVertSize = 5.f;
+		inline static float secondSelectedVertSize = 3.f;
 		inline static glm::vec3 selectedVertColor{ 1.f, .5f, 1.f };
 
 	private:
@@ -172,6 +173,7 @@ namespace kouek
 		GLuint VBO = 0, VAO;
 		GLuint selectedPathID = std::numeric_limits<GLuint>::max();
 		GLuint selectedVertID = std::numeric_limits<GLuint>::max();
+		GLuint scndSelectedVertID = std::numeric_limits<GLuint>::max(); // for 2 verts op
 		GLuint selectedSubPathID = std::numeric_limits<GLuint>::max();
 		std::vector<glm::vec3> verts;
 		std::vector<GLuint> pathIDOfVerts;
@@ -289,43 +291,34 @@ namespace kouek
 			availablePathIDs.emplace(pathID);
 			paths.erase(pathID);
 		}
-		inline void joinPath(GLuint v0, GLuint v1)
+		inline void joinPath()
 		{
-			GLuint p0 = pathIDOfVerts[v0];
-			GLuint p1 = pathIDOfVerts[v1];
-			if (p0 == p1) return;
-			Path* inPath, * outPath;
-			GLuint inPathID, outPathID;
-			if (paths.at(p0).subPaths.size()
-				< paths.at(p1).subPaths.size())
-			{
-				inPath = &paths.at(p0);
-				outPath = &paths.at(p1);
-				inPathID = p0;
-				outPathID = p1;
-			}
-			else
-			{
-				inPath = &paths.at(p1);
-				outPath = &paths.at(p0);
-				inPathID = p1;
-				outPathID = p0;
-			}
+			if (selectedVertID == std::numeric_limits<GLuint>::max()
+				|| scndSelectedVertID == std::numeric_limits<GLuint>::max())
+				return;
+			GLuint outPathID = pathIDOfVerts[selectedVertID];
+			GLuint inPathID = pathIDOfVerts[scndSelectedVertID];
+			if (outPathID == inPathID
+				|| outPathID == std::numeric_limits<GLuint>::max()
+				|| inPathID == std::numeric_limits<GLuint>::max())
+				return;
+			Path& inPath = paths.at(inPathID);
+			Path& outPath = paths.at(outPathID);
 			// update verts data
-			for (auto& [id, subPath] : inPath->subPaths)
+			for (auto& [id, subPath] : inPath.subPaths)
 				for (GLuint vertID : subPath.verts)
 					pathIDOfVerts[vertID] = outPathID;
 			// transfer old sub paths
-			for (auto& [subPathID, subPath] : inPath->subPaths)
-				outPath->subPaths.emplace(std::piecewise_construct,
+			for (auto& [subPathID, subPath] : inPath.subPaths)
+				outPath.subPaths.emplace(std::piecewise_construct,
 					std::forward_as_tuple(subPathID),
 					std::forward_as_tuple(std::move(subPath)));
 			deletePath(inPathID);
 			// append a sub path linking 2 paths
 			startPath(outPathID);
-			startVertex(v0);
+			startVertex(selectedVertID);
 			GLuint subPathID = addSubPath();
-			outPath->subPaths.at(subPathID).addVertex(v1);
+			outPath.subPaths.at(subPathID).addVertex(scndSelectedVertID);
 			endPath();
 		}
 		inline void startPath(GLuint pathID)
@@ -334,7 +327,8 @@ namespace kouek
 		}
 		inline void endPath()
 		{
-			selectedPathID = selectedVertID = selectedSubPathID
+			selectedPathID = selectedVertID
+				= selectedSubPathID = scndSelectedVertID
 				= std::numeric_limits<GLuint>::max();
 		}
 		inline GLuint addSubPath()
@@ -363,7 +357,8 @@ namespace kouek
 		}
 		inline void endSubPath()
 		{
-			selectedVertID = selectedSubPathID
+			selectedSubPathID
+				= selectedVertID = scndSelectedVertID
 				= std::numeric_limits<GLuint>::max();
 		}
 		inline GLuint addVertex(const glm::vec3& pos)
@@ -408,42 +403,68 @@ namespace kouek
 			GLuint linkCnt = 0;
 			GLuint tarSPID;
 			SubPath* tarSP = nullptr;
+			if (selectedPathID == std::numeric_limits<GLuint>::max())
+				return;
 			Path& path = paths.at(selectedPathID);
+			if (vertID == path.rootID) return;
 			for (auto& [id, subPath] : path.subPaths)
-				for (GLuint vert : subPath.verts)
-					if (vert == vertID)
+					if (vertID == subPath.verts.front()
+						|| vertID == subPath.verts.back())
 					{
 						tarSPID = id;
 						tarSP = &subPath;
 						++linkCnt;
 					}
 			if (linkCnt == 0 || linkCnt > 1)
-				return; // vert doesnt' exist or is not an end vert
+				return; // vert doesnt' exist or is not vert at the end
 			tarSP->verts.pop_back();
 			availableVertIDs.push(vertID);
 			
 			// if sub path is empty, delete it
-			if (tarSP->verts.size() == 0)
+			if (tarSP->verts.size() == 1)
 				deleteSubPath(tarSPID);
+
+			// if path is empty, delete it
+			if (path.subPaths.size() == 0)
+			{
+				deletePath(selectedPathID);
+				selectedPathID = std::numeric_limits<GLuint>::max();
+			}
 		}
 		inline void startVertex(GLuint vertID)
 		{
 			selectedVertID = vertID;
 		}
+		inline void startSecondVertex(GLuint vertID)
+		{
+			scndSelectedVertID = vertID;
+		}
 		inline void endVertex()
 		{
 			selectedVertID = std::numeric_limits<GLuint>::max();
 		}
+		inline void endSecondVertex()
+		{
+			scndSelectedVertID = std::numeric_limits<GLuint>::max();
+		}
 		inline void draw(GLint colUniformPos = -1)
 		{
 			// draw selected vert
-			if (colUniformPos != -1
-				&& selectedVertID != std::numeric_limits<GLuint>::max())
+			if (colUniformPos != -1)
 			{
-				glPointSize(selectedVertSize);
 				glUniform3fv(colUniformPos, 1, (const float*)&selectedVertColor);
-				glBindVertexArray(VAO);
-				glDrawArrays(GL_POINTS, selectedVertID, 1);
+				if (selectedVertID != std::numeric_limits<GLuint>::max())
+				{
+					glPointSize(selectedVertSize);
+					glBindVertexArray(VAO);
+					glDrawArrays(GL_POINTS, selectedVertID, 1);
+				}
+				if (scndSelectedVertID != std::numeric_limits<GLuint>::max())
+				{
+					glPointSize(secondSelectedVertSize);
+					glBindVertexArray(VAO);
+					glDrawArrays(GL_POINTS, scndSelectedVertID, 1);
+				}
 			}
 			for (auto& [id, path] : paths)
 			{

@@ -254,6 +254,9 @@ void kouek::VREventHandler::updateWhenDrawingUI()
 
 void kouek::VREventHandler::updateWhenDrawingScene()
 {
+    if (states->game.intrctActMode != InteractionActionMode::JoinPath)
+        states->pathRenderer->endSecondVertex();
+
     // handle VR input action
     vr::VRActiveActionSet_t activeActionSet = { 0 };
     activeActionSet.ulActionSet = actionsetFocus;
@@ -325,15 +328,27 @@ void kouek::VREventHandler::updateWhenDrawingScene()
                 ++needShowGizmoCnt;
             }
         }
-        // handle right trackpad
         if (states->game.moveMode == MoveMode::Focus)
         {
-            vr::VRInput()->GetDigitalActionData(actionRightTrackpadNClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadNClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
             if (actionData.bActive && actionData.bState)
                 states->camera.move(0, 0, +AppStates::moveSensity);
-            vr::VRInput()->GetDigitalActionData(actionRightTrackpadSClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+            vr::VRInput()->GetDigitalActionData(actionLeftTrackpadSClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
             if (actionData.bActive && actionData.bState)
                 states->camera.move(0, 0, -AppStates::moveSensity);
+        }
+        // handle right trackpad
+        vr::VRInput()->GetDigitalActionData(actionRightTrackpadNClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bState)
+        {
+            states->spacesScale += AppStates::spaceScaleSensity;
+            states->spacesScaleChanged = true;
+        }
+        vr::VRInput()->GetDigitalActionData(actionRightTrackpadSClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
+        if (actionData.bActive && actionData.bState)
+        {
+            states->spacesScale -= AppStates::spaceScaleSensity;
+            states->spacesScaleChanged = true;
         }
         // handle left trigger
         vr::VRInput()->GetDigitalActionData(actionLeftTriggerClick, &actionData, sizeof(actionData), vr::k_ulInvalidInputValueHandle);
@@ -522,7 +537,7 @@ void kouek::VREventHandler::onRightHandTriggerPressed(
         if (pressed && !lastPressed)
             states->game.shouldSelectVertex = true;
         if (pressed && isRhtTrigClicked)
-            states->pathRenderer->joinPath(states->game.intrctLineVertID2[0], states->game.intrctLineVertID2[1]);
+            states->pathRenderer->joinPath();
         break;
 	default:
 		break;
