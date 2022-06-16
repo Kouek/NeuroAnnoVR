@@ -429,7 +429,11 @@ void kouek::VREventHandler::onLeftHandTriggerPulled(
             glm::vec3 drc = dlt;
             drc = glm::normalize(dlt) * (isLftTrigClicked ?
                 AppStates::subrgnMoveSensityFine : AppStates::subrgnMoveSensity);
-            states->subrgn.center += drc;
+            glm::vec3 newCntr = states->subrgn.center + drc;
+            if (std::isnan(newCntr.x)) newCntr.x = states->subrgn.center.x;
+            if (std::isnan(newCntr.y)) newCntr.y = states->subrgn.center.y;
+            if (std::isnan(newCntr.z)) newCntr.z = states->subrgn.center.z;
+            states->subrgn.center = newCntr;
             lastPos = states->hand2[VRContext::Hand_Left].transform[3];
             states->renderer->setSubregion(states->subrgn);
         }
